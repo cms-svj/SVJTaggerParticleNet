@@ -8,4 +8,4 @@ export JUPYTER_RUNTIME_DIR=${storage_dir}/.local/share/jupyter/runtime
 export JUPYTER_DATA_DIR=${storage_dir}/.local/share/jupyter
 export IPYTHONDIR=${storage_dir}/.ipython
 
-source training/bin/activate
+source coffeaenv/bin/activate

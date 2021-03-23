@@ -12,11 +12,11 @@ usage(){
 	$ECHO "Options:"
 	$ECHO "-d              \tuse the developer branch of Coffea (default = 0)"
 	$ECHO "-h              \tprint this message and exit"
-	$ECHO "-n [NAME]       \toverride the name of the virtual environment"
+	$ECHO "-n [NAME]       \toverride the name of the virtual environment (default = coffeaenv)"
 	exit $EXIT
 }
 
-NAME=training
+NAME=coffeaenv
 LCG=/cvmfs/sft.cern.ch/lcg/views/LCG_99cuda/x86_64-centos7-gcc8-opt
 DEV=0
 
@@ -47,8 +47,19 @@ source $LCG/setup.sh
 $ECHO "\nMaking and activating the virtual environment ... "
 python -m venv --copies $NAME
 source $NAME/bin/activate
+
+#$ECHO "\nSetup for Dask on LPC ... "
+#pypackages=lib/python3.7/site-packages/
+#lcgprefix=${LCG}/${pypackages}
+## need to remove python path from LCG to avoid dask conflicts
+#export PYTHONPATH=""
+#ln -sf ${lcgprefix}/pyxrootd ${NAME}/${pypackages}/pyxrootd
+#ln -sf ${lcgprefix}/XRootD ${NAME}/${pypackages}/XRootD
+#git clone git@github.com:cms-svj/lpc_dask
+#python -m pip install --no-cache-dir dask[dataframe]==2020.12.0 distributed==2020.12.0 dask-jobqueue
+
 $ECHO "\nInstalling 'pip' packages ... "
-python -m pip install --no-cache-dir setuptools pip argparse --upgrade 
+python -m pip install --no-cache-dir setuptools pip argparse --upgrade
 python -m pip install --no-cache-dir xxhash
 python -m pip install --no-cache-dir uproot4
 python -m pip install --no-cache-dir magiconfig
@@ -57,24 +68,33 @@ if [[ "$DEV" == "1" ]]; then
 	python -m pip install --no-cache-dir flake8 pytest coverage
 	git clone https://github.com/CoffeaTeam/coffea
 	cd coffea
-	python -m pip install --no-cache-dir --editable .[dask,spark,parsl] 'uproot-methods<0.9.0,>=0.7.3' 'pillow>=7.1.0' 'mplhep==0.1.35'
+	python -m pip install --no-cache-dir --editable .[dask,spark,parsl] 'pillow>=7.1.0'
 	cd ..
 else
 	$ECHO "Installing the 'production' version of Coffea ... "
-	python -m pip install --no-cache-dir coffea[dask,spark,parsl] 'uproot-methods<0.9.0,>=0.7.3' 'pillow>=7.1.0' 'mplhep==0.1.35'
+	python -m pip install --no-cache-dir coffea[dask,spark,parsl] 'pillow>=7.1.0'
 fi
+
+## apply patches
+#./patch.sh $NAME
+#
+## Clone TreeMaker for its lists of samples and files
+#$ECHO "\nCloning the TreeMaker repository ..."
+#git clone git@github.com:TreeMaker/TreeMaker.git ${NAME}/${pypackages}/TreeMaker/
 
 # Setup the activation script for the virtual environment
 $ECHO "\nSetting up the activation script for the virtual environment ... "
 sed -i '40s/.*/VIRTUAL_ENV="$(cd "$(dirname "$(dirname "${BASH_SOURCE[0]}" )")" \&\& pwd)"/' $NAME/bin/activate
 find ${NAME}/bin/ -type f -print0 | xargs -0 -P 4 sed -i '1s/#!.*python$/#!\/usr\/bin\/env python/'
-sed -i "2a source ${LCG}/setup.sh"'\nexport PYTHONPATH=""' $NAME/bin/activate
-sed -i "4a source ${LCG}/setup.csh"'\nsetenv PYTHONPATH ""' $NAME/bin/activate.csh
+#sed -i "2a source ${LCG}/setup.sh"'\nexport PYTHONPATH=""' $NAME/bin/activate
+#sed -i "4a source ${LCG}/setup.csh"'\nsetenv PYTHONPATH ""' $NAME/bin/activate.csh
+sed -i "2a source ${LCG}/setup.sh" $NAME/bin/activate
+sed -i "4a source ${LCG}/setup.csh" $NAME/bin/activate.csh
 
-$ECHO "\nSetting up the ipython/jupyter kernel ... "
-storage_dir=$(readlink -f $PWD)
-ipython kernel install --prefix=${storage_dir}/.local --name=$NAME
-tar -zcf ${NAME}.tar.gz ${NAME}
+#$ECHO "\nSetting up the ipython/jupyter kernel ... "
+#storage_dir=$(readlink -f $PWD)
+#ipython kernel install --prefix=${storage_dir}/.local --name=$NAME
+#tar -zcf ${NAME}.tar.gz ${NAME}
 
 deactivate
 $ECHO "\nFINISHED"
