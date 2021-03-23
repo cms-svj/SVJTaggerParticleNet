@@ -12,11 +12,11 @@ usage(){
 	$ECHO "Options:"
 	$ECHO "-d              \tuse the developer branch of Coffea (default = 0)"
 	$ECHO "-h              \tprint this message and exit"
-	$ECHO "-n [NAME]       \toverride the name of the virtual environment"
+	$ECHO "-n [NAME]       \toverride the name of the virtual environment (default = coffeaenv)"
 	exit $EXIT
 }
 
-NAME=training
+NAME=coffeaenv
 DEV=0
 
 # check arguments
