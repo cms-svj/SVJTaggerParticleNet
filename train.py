@@ -4,8 +4,8 @@ from torch.autograd import Variable
 from torch.nn import functional as f
 import os
 import argparse
-from models import DnCNN, PatchLoss, WeightedPatchLoss
-from dataset import RootDataset, get_all_histograms, get_bin_weights, add_noise
+from models import DNN, PatchLoss, WeightedPatchLoss
+from dataset import RootDataset
 import glob
 import torch.optim as optim
 import uproot
@@ -19,49 +19,22 @@ import numpy as np
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
-# create and save truth, noisy, and reconstructed data sets and store in text files
-def make_sample_images(args, model):
-    branch = get_all_histograms("data/training/ntup_photon_energy100.0_mult1_eta0.5_phi0.0_n1000_part1.root")
-    model.to('cpu')
-    for image in range(10):        
-        data = get_bin_weights(branch, image).copy()
-        np.savetxt(args.outf+'/samples/truth' + str(image) + '.txt', data)
-        noisy = add_noise(data, args.sigma).copy()
-        np.savetxt(args.outf+'/samples/noisy' + str(image) + '.txt', noisy)
-        data = torch.from_numpy(data)
-        noisy = torch.from_numpy(noisy)
-        noisy = noisy.unsqueeze(0)
-        noisy = noisy.unsqueeze(1)
-        output = model(noisy.float()).squeeze(0).squeeze(0).detach().numpy()
-        np.savetxt(args.outf+'/samples/output' + str(image) + '.txt', output)
-        truth = data.numpy()
-        noisy = noisy.numpy()
-        diff = output-truth
-        noisy_diff = noisy-truth
-        np.savetxt(args.outf+'/samples/diff' + str(image) + '.txt', diff)
-        del data
-        del noisy
-        del output
-        del diff
-    model.to('cuda')
         
 def init_weights(m):
     if type(m) == nn.Linear:
-        torch.nn.init.xavier_uniform(m.weight)
+        torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
 def main():
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--num_of_layers", type=int, default=9, help="Number of total layers in the CNN")
-    parser.add_argument("--sigma", type=float, default=20, help='Standard deviation of gaussian noise level')
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
     parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--trainfile", type=str, default="test.root", help='Path to .root file for training')
     parser.add_argument("--valfile", type=str, default="test.root", help='Path to .root file for validation')
-    parser.add_argument("--batchSize", type=int, default=100, help="Training batch size")
+    parser.add_argument("--batchSize", type=int, default=10000, help="Training batch size")
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
     parser.add_argument("--patchSize", type=int, default=20, help="Size of patches to apply in loss function")
     parser.add_argument("--kernelSize", type=int, default=3, help="Size of kernel in CNN")
@@ -78,19 +51,19 @@ def main():
     if args.device.type == 'cuda': 
         gpuIndex = torch.cuda.current_device()
         print("Using GPU named: \"{}\"".format(torch.cuda.get_device_name(gpuIndex)))
-        print('Memory Usage:')
-        print('\tAllocated:', round(torch.cuda.memory_allocated(gpuIndex)/1024**3,1), 'GB')
-        print('\tCached:   ', round(torch.cuda.memory_reserved(gpuIndex)/1024**3,1), 'GB')
+        #print('Memory Usage:')
+        #print('\tAllocated:', round(torch.cuda.memory_allocated(gpuIndex)/1024**3,1), 'GB')
+        #print('\tCached:   ', round(torch.cuda.memory_reserved(gpuIndex)/1024**3,1), 'GB')
     
     # Load dataset
     print('Loading dataset ...')
-    dataset_train = RootDataset(root_file=args.trainfile, sigma = args.sigma)
-    loader_train = DataLoader(dataset=dataset_train, batch_size=args.batchSize)
-    dataset_val = RootDataset(root_file=args.valfile, sigma=math.log(args.sigma))
-    val_train = DataLoader(dataset=dataset_val, batch_size=args.batchSize)
+    dataset_train = RootDataset(root_file="tree_QCD_Pt_600to800_MC2017.root", variables=["pt","eta"])
+    loader_train = DataLoader(dataset=dataset_train, batch_size=args.batchSize, num_workers=0)
+    dataset_val = RootDataset(root_file="tree_SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017.root", variables=["pt","eta"])
+    val_train = DataLoader(dataset=dataset_val, batch_size=args.batchSize, num_workers=0)
     
     # Build model
-    model = DnCNN(channels=1, num_of_layers=args.num_of_layers, kernel_size=args.kernelSize, features=args.num_of_features).to(device=args.device)
+    model = DNN(n_var=2, n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3).to(device=args.device)
     if (args.model == None):
         model.apply(init_weights)
         print("Creating new model ")
@@ -100,7 +73,7 @@ def main():
         model.eval()
     
     # Loss function
-    criterion = PatchLoss()
+    criterion = nn.CrossEntropyLoss()
     criterion.to(device=args.device)
     
     #Optimizer
@@ -119,29 +92,29 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            truth, noise = data
-            noise = noise.unsqueeze(1)
-            output = model((noise.float().to(args.device)))
-            batch_loss = criterion(output.squeeze(1).to(args.device), truth.to(args.device)).to(args.device)
+            label, d = data
+            output = model((d.float().to(args.device)))
+            batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
             batch_loss.backward()
             optimizer.step()
             model.eval()
             train_loss+=batch_loss.item()
-            del truth
-            del noise
+            del label
+            del d
             del output
             del batch_loss
         training_losses[epoch] = train_loss
         print("t: "+ str(train_loss))
         
+        # validation
         val_loss = 0
         for i, data in enumerate(val_train, 0):
-            val_truth, val_noise =  data
-            val_output = model((val_noise.unsqueeze(1).float().to(args.device)))
-            output_loss = criterion(val_output.squeeze(1).to(args.device), val_truth.to(args.device)).to(args.device)
+            val_label, val_d =  data
+            val_output = model((val_d.float().to(args.device)))
+            output_loss = criterion(val_output.to(args.device), val_label.squeeze(1).to(args.device)).to(args.device)
             val_loss+=output_loss.item()
-            del val_truth
-            del val_noise
+            del val_label
+            del val_d
             del val_output
             del output_loss
         scheduler.step(torch.tensor([val_loss]))
@@ -151,15 +124,12 @@ def main():
         # save the model
         model.eval()
         torch.save(model.state_dict(), os.path.join(args.outf, 'net.pth'))
-        #make_sample_images(args, model)
     
     # plot loss/epoch for training and validation sets
     training = plt.plot(training_losses, label='training')
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
-    plt.savefig(args.outf + "/loss_plot.png")
-    
-    make_sample_images(args, model)
+    plt.savefig(args.outf + "/loss_plot.png")    
 
 if __name__ == "__main__":
     main()
