@@ -1,20 +1,26 @@
 from magiconfig import MagiConfig
 
 config = MagiConfig(dataset=MagiConfig(), features=MagiConfig(), training=MagiConfig(), hyper=MagiConfig())
-config.dataset.path = "root://cmseos.fnal.gov//store/user/lpcsusyhad/SVJ2017/Run2ProductionV16/Skims/tree_dijetmtdetahadmf-train-flatsig/"
-config.dataset.signal = {"SVJ": ["SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017"]}
+# config.dataset.path = "root://cmseos.fnal.gov//store/user/lpcsusyhad/SVJ2017/Run2ProductionV17/Skims/tree_dijetmtdetahadmf-train-flatsig/"
+# config.dataset.signal = {"SVJ": ["SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017"]}
+# config.dataset.background =  {"QCD": [
+#     "QCD_Pt_300to470_MC2017",
+#     "QCD_Pt_470to600_MC2017",
+#     "QCD_Pt_600to800_MC2017",
+#     "QCD_Pt_800to1000_MC2017",
+#     "QCD_Pt_1000to1400_MC2017",
+#     "QCD_Pt_1400to1800_MC2017",
+#     "QCD_Pt_1800to2400_MC2017",
+#     "QCD_Pt_2400to3200_MC2017",
+# ]}
+config.dataset.path = ""
+config.dataset.signal = {"SVJ": ["tree_SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017"]}
 config.dataset.background =  {"QCD": [
-    "QCD_Pt_300to470_MC2017",
-    "QCD_Pt_470to600_MC2017",
-    "QCD_Pt_600to800_MC2017",
-    "QCD_Pt_800to1000_MC2017",
-    "QCD_Pt_1000to1400_MC2017",
-    "QCD_Pt_1400to1800_MC2017",
-    "QCD_Pt_1800to2400_MC2017",
-    "QCD_Pt_2400to3200_MC2017",
+    "tree_QCD_Pt_600to800_MC2017",
 ]}
 config.features.uniform = ["pt"]
-config.features.train = ["mult","girth","tau21","tau32","msd","deltaphi","axisminor"]
+# config.features.train = ["mult","girth","tau21","tau32","msd","deltaphi","axisminor"]
+config.features.train = ["pt","eta"]
 config.features.spectator = ["mt","eta"]
 config.training.size = 0.5
 config.training.signal_id_method = "two"

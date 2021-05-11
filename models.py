@@ -14,7 +14,7 @@ class DnCNN(nn.Module):
         layers.append(nn.Conv2d(in_channels=channels, out_channels=features, kernel_size=kernel_size, padding=padding, bias=False))
         layers.append(nn.ReLU(inplace=True))
         for _ in range(num_of_layers-2):
-            layers.append(nn.Conv2d(in_channels=features, out_channels=features, kernel_size=kernel_size, padding=padding, bias=False))            
+            layers.append(nn.Conv2d(in_channels=features, out_channels=features, kernel_size=kernel_size, padding=padding, bias=False))
             layers.append(nn.ReLU(inplace=True))
 
         layers.append(nn.Conv2d(in_channels=features, out_channels=channels, kernel_size=kernel_size, padding=padding, bias=False))
@@ -59,7 +59,7 @@ class PatchLoss(nn.Module):
                 for k in range(list(output_patches.size())[1]):
                     max_patch_loss = max(max_patch_loss, f.l1_loss(output_patches[j][k], target_patches[j][k]))
             avg_loss+=max_patch_loss
-        avg_loss/=len(output)       
+        avg_loss/=len(output)
         #print(avg_loss)
         return avg_loss;
 
@@ -87,18 +87,18 @@ if __name__=="__main__":
     # Test CrossEntropyLoss function
     # input is 5 events with 2 outputs
     # target is 5 numbers that correspond to the correct index number for each event
-    # Note can not have softmax in model since CrossEntropyLoss does this tep for you. Will need to apply softmax when using the model after training. 
+    # Note can not have softmax in model since CrossEntropyLoss does this tep for you. Will need to apply softmax when using the model after training.
     loss = nn.CrossEntropyLoss()
     input = torch.randn(5, 2, requires_grad=True)
     target = torch.empty(5, dtype=torch.long).random_(2)
     output = loss(input, target)
     output.backward()
-
+    
     # Test DNN model
     # input is 5 events with 10 input variables
     # out is the non-softmax output of the model
     # outFinal is the softmax final version of the model output
-    # target is 5 numbers that correspond to the correct index number for each event    
+    # target is 5 numbers that correspond to the correct index number for each event
     net = DNN()
     loss = nn.CrossEntropyLoss()
     input = torch.randn(5, 10)
@@ -107,4 +107,3 @@ if __name__=="__main__":
     target = torch.empty(5, dtype=torch.long).random_(2)
     output = loss(out, target)
     output.backward()
-

@@ -16,10 +16,10 @@ from configs import configs as c
 from torch.utils.data import DataLoader
 import math
 import numpy as np
-
+# ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-        
+
 def init_weights(m):
     if type(m) == nn.Linear:
         torch.nn.init.xavier_uniform_(m.weight)
@@ -44,26 +44,34 @@ def main():
     args = parser.parse_args()
     parser.write_config(args, args.outf + "/config_out.py")
 
-    # Choose cpu or gpu 
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')    
+    # Choose cpu or gpu
+    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', args.device)
-
-    if args.device.type == 'cuda': 
+    if args.device.type == 'cuda':
         gpuIndex = torch.cuda.current_device()
         print("Using GPU named: \"{}\"".format(torch.cuda.get_device_name(gpuIndex)))
         #print('Memory Usage:')
         #print('\tAllocated:', round(torch.cuda.memory_allocated(gpuIndex)/1024**3,1), 'GB')
         #print('\tCached:   ', round(torch.cuda.memory_reserved(gpuIndex)/1024**3,1), 'GB')
-    
+
     # Load dataset
     print('Loading dataset ...')
-    dataset_train = RootDataset(root_file="tree_QCD_Pt_600to800_MC2017.root", variables=["pt","eta"])
+    inputFiles = []
+    dSet = args.dataset
+    for bkg,fileList in dSet.background.items():
+        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
+    for sig,fileList in dSet.signal.items():
+        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
+    print(inputFiles)
+    varSet = args.features.train
+    print(varSet)
+    dataset_train = RootDataset(root_file=inputFiles, variables=varSet)
     loader_train = DataLoader(dataset=dataset_train, batch_size=args.batchSize, num_workers=0)
-    dataset_val = RootDataset(root_file="tree_SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017.root", variables=["pt","eta"])
+    dataset_val = RootDataset(root_file=inputFiles, variables=varSet)
     val_train = DataLoader(dataset=dataset_val, batch_size=args.batchSize, num_workers=0)
-    
+
     # Build model
-    model = DNN(n_var=2, n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3).to(device=args.device)
+    model = DNN(n_var=len(varSet), n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3).to(device=args.device)
     if (args.model == None):
         model.apply(init_weights)
         print("Creating new model ")
@@ -71,15 +79,15 @@ def main():
         print("Loading model from file " + args.model)
         model.load_state_dict(torch.load(args.model))
         model.eval()
-    
+
     # Loss function
     criterion = nn.CrossEntropyLoss()
     criterion.to(device=args.device)
-    
+
     #Optimizer
     optimizer = optim.Adam(model.parameters(), lr = args.lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, patience=10, verbose=True)
-    
+
     # training and validation
     step = 0
     training_losses = np.zeros(args.epochs)
@@ -105,7 +113,7 @@ def main():
             del batch_loss
         training_losses[epoch] = train_loss
         print("t: "+ str(train_loss))
-        
+
         # validation
         val_loss = 0
         for i, data in enumerate(val_train, 0):
@@ -120,16 +128,16 @@ def main():
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
         print("v: "+ str(val_loss))
-        
+
         # save the model
         model.eval()
         torch.save(model.state_dict(), os.path.join(args.outf, 'net.pth'))
-    
+
     # plot loss/epoch for training and validation sets
     training = plt.plot(training_losses, label='training')
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
-    plt.savefig(args.outf + "/loss_plot.png")    
+    plt.savefig(args.outf + "/loss_plot.png")
 
 if __name__ == "__main__":
     main()
