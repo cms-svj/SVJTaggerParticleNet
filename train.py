@@ -24,11 +24,14 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 def getNNOutput(dataset, model):
-    labels, data = dataset.get_arrays()
+    loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
+    l, d = next(iter(loader))
+    labels = l.squeeze(1).numpy()
+    data = d.float()
     model.eval()
     out = model(data)
-    output = f.softmax(out,dim=1)[:,0].detach().numpy()
-    return labels[:,0], output
+    output = f.softmax(out,dim=1)[:,1].detach().numpy()
+    return labels, output
 
 def getROCStuff(label, output):
     fpr, tpr, thresholds = roc_curve(label, output)
@@ -40,7 +43,7 @@ def main():
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--num_of_layers", type=int, default=9, help="Number of total layers in the CNN")
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--trainfile", type=str, default="test.root", help='Path to .root file for training')
     parser.add_argument("--valfile", type=str, default="test.root", help='Path to .root file for validation')
@@ -154,15 +157,18 @@ def main():
     plt.savefig(args.outf + "/loss_plot.png")
 
     # plot ROC curve
-    label_train, output_train = getNNOutput(dataset, model)
-    #label_test, output_test = getNNOutput(dataset, model)
+    model.to('cpu')
+    label_train, output_train = getNNOutput(train, model)
+    label_test, output_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
+    fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test)
     fig = plt.figure()
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False positive rate')
     plt.ylabel('True positive rate')
     plt.title('ROC curve', pad=45.0)
-    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train))
+    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train), color='xkcd:red')
+    plt.plot(fpr_Test, tpr_Test, label="Test (area = {:.3f})".format(auc_Test), color='xkcd:black')
     plt.legend(loc='best')
     fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
     plt.close(fig)
