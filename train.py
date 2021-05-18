@@ -2,19 +2,15 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import functional as f
-import os
-import argparse
-from models import DNN, PatchLoss, WeightedPatchLoss
-from dataset import RootDataset
-import glob
-import torch.optim as optim
-import uproot
 from torch.utils.tensorboard import SummaryWriter
+import torch.utils.data as udata
+import torch.optim as optim
+import os
+from models import DNN, PatchLoss, WeightedPatchLoss
+from dataset import RootDataset, get_sizes
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
-from torch.utils.data import DataLoader
-import math
 import numpy as np
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 
@@ -27,16 +23,25 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
+def getROCStuff(dataset, model):
+    labels, data = dataset.get_arrays()
+    model.eval()
+    out = model(data)
+    output = f.softmax(out,dim=1)[:,0].detach().numpy()
+    fpr, tpr, thresholds = roc_curve(labels[:,0], output)
+    auc = roc_auc_score(labels[:,0], output)
+    return fpr, tpr, auc
+
 def main():
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--num_of_layers", type=int, default=9, help="Number of total layers in the CNN")
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--trainfile", type=str, default="test.root", help='Path to .root file for training')
     parser.add_argument("--valfile", type=str, default="test.root", help='Path to .root file for validation')
-    parser.add_argument("--batchSize", type=int, default=4096, help="Training batch size")
+    parser.add_argument("--batchSize", type=int, default=500, help="Training batch size")
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
     parser.add_argument("--patchSize", type=int, default=20, help="Size of patches to apply in loss function")
     parser.add_argument("--kernelSize", type=int, default=3, help="Size of kernel in CNN")
@@ -67,10 +72,12 @@ def main():
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset_train = RootDataset(root_file=inputFiles, variables=varSet)
-    loader_train = DataLoader(dataset=dataset_train, batch_size=args.batchSize, num_workers=0)
-    dataset_val = RootDataset(root_file=inputFiles, variables=varSet)
-    val_train = DataLoader(dataset=dataset_val, batch_size=args.batchSize, num_workers=0)
+    dataset = RootDataset(root_file=inputFiles, variables=varSet)
+    sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
+    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+    loader_train = udata.DataLoader(dataset=train, batch_size=args.batchSize, num_workers=0)
+    loader_val = udata.DataLoader(dataset=val, batch_size=args.batchSize, num_workers=0)
+    loader_test = udata.DataLoader(dataset=test, batch_size=args.batchSize, num_workers=0)
 
     # Build model
     model = DNN(n_var=len(varSet), n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3).to(device=args.device)
@@ -120,7 +127,7 @@ def main():
 
         # validation
         val_loss = 0
-        for i, data in enumerate(val_train, 0):
+        for i, data in enumerate(loader_val, 0):
             val_label, val_d =  data
             val_output = model((val_d.float().to(args.device)))
             output_loss = criterion(val_output.to(args.device), val_label.squeeze(1).to(args.device)).to(args.device)
@@ -145,12 +152,7 @@ def main():
     plt.savefig(args.outf + "/loss_plot.png")
 
     # plot ROC curve
-    labels, data = dataset_train.get_arrays()
-    model.eval()
-    out = model(data)
-    output = f.softmax(out,dim=1)[:,0].detach().numpy()
-    fpr_Train, tpr_Train, thresholds_Train = roc_curve(labels[:,0], output)
-    auc_Train = roc_auc_score(labels[:,0], output)
+    fpr_Train, tpr_Train, auc_Train = getROCStuff(train, model)
     fig = plt.figure()
     #hep.cms.label(data=True, paper=False, year=self.config["year"])
     plt.plot([0, 1], [0, 1], 'k--')
