@@ -9,13 +9,15 @@ from dataset import RootDataset
 import glob
 import torch.optim as optim
 import uproot
-#from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
 from torch.utils.data import DataLoader
 import math
 import numpy as np
+from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
+
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -30,11 +32,11 @@ def main():
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--num_of_layers", type=int, default=9, help="Number of total layers in the CNN")
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--epochs", type=int, default=2, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--trainfile", type=str, default="test.root", help='Path to .root file for training')
     parser.add_argument("--valfile", type=str, default="test.root", help='Path to .root file for validation')
-    parser.add_argument("--batchSize", type=int, default=10000, help="Training batch size")
+    parser.add_argument("--batchSize", type=int, default=4096, help="Training batch size")
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
     parser.add_argument("--patchSize", type=int, default=20, help="Size of patches to apply in loss function")
     parser.add_argument("--kernelSize", type=int, default=3, help="Size of kernel in CNN")
@@ -89,6 +91,7 @@ def main():
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, patience=10, verbose=True)
 
     # training and validation
+    writer = SummaryWriter()
     step = 0
     training_losses = np.zeros(args.epochs)
     validation_losses = np.zeros(args.epochs)
@@ -107,6 +110,7 @@ def main():
             optimizer.step()
             model.eval()
             train_loss+=batch_loss.item()
+            writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
             del label
             del d
             del output
@@ -128,16 +132,35 @@ def main():
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
         print("v: "+ str(val_loss))
-
+        
         # save the model
         model.eval()
         torch.save(model.state_dict(), os.path.join(args.outf, 'net.pth'))
+    writer.close()
 
     # plot loss/epoch for training and validation sets
     training = plt.plot(training_losses, label='training')
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
+
+    # plot ROC curve
+    labels, data = dataset_train.get_arrays()
+    model.eval()
+    out = model(data)
+    output = f.softmax(out,dim=1)[:,0].detach().numpy()
+    fpr_Train, tpr_Train, thresholds_Train = roc_curve(labels[:,0], output)
+    auc_Train = roc_auc_score(labels[:,0], output)
+    fig = plt.figure()
+    #hep.cms.label(data=True, paper=False, year=self.config["year"])
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.xlabel('False positive rate')
+    plt.ylabel('True positive rate')
+    plt.title('ROC curve', pad=45.0)
+    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train))
+    plt.legend(loc='best')
+    fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()
