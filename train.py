@@ -58,16 +58,15 @@ def main():
     print('Loading dataset ...')
     inputFiles = []
     dSet = args.dataset
-    for bkg,fileList in dSet.background.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
-    for sig,fileList in dSet.signal.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
+    sigFiles = dSet.signal
+    inputFiles = dSet.background
+    inputFiles.update(sigFiles)
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset_train = RootDataset(root_file=inputFiles, variables=varSet)
+    dataset_train = RootDataset(inputFolder=dSet.path,root_file=inputFiles, variables=varSet)
     loader_train = DataLoader(dataset=dataset_train, batch_size=args.batchSize, num_workers=0)
-    dataset_val = RootDataset(root_file=inputFiles, variables=varSet)
+    dataset_val = RootDataset(inputFolder=dSet.path,root_file=inputFiles, variables=varSet)
     val_train = DataLoader(dataset=dataset_val, batch_size=args.batchSize, num_workers=0)
 
     # Build model

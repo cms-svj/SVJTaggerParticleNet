@@ -10,23 +10,24 @@ import torch
 import math
 import pandas as pd
 
-def get_all_vars(samples, variables, tree="tree"):
+def get_all_vars(inputFolder, samples, variables, tree="tree"):
     dSets = []
     signal = []
-    for fileName in samples:
-        f = up.open(fileName)
-        branches = f[tree].pandas.df(variables)
-        dSets.append(branches)
-        if "SVJ" in fileName:
-            signal += [True]*len(branches)
-        else:
-            signal += [False]*len(branches)
+    for key,fileList in samples.items():
+        for fileName in fileList:
+            f = up.open(inputFolder  + fileName + ".root")
+            branches = f[tree].pandas.df(variables)
+            dSets.append(branches)
+            if key == "signal":
+                signal += [True]*len(branches)
+            else:
+                signal += [False]*len(branches)
     dataSet = pd.concat(dSets)
     return [dataSet,signal]
 
 class RootDataset(udata.Dataset):
-    def __init__(self, root_file, variables,signal=False):
-        dataInfo = get_all_vars(root_file, variables)
+    def __init__(self, inputFolder, root_file, variables, signal=False):
+        dataInfo = get_all_vars(inputFolder, root_file, variables)
         self.root_file = root_file
         self.variables = variables
         self.vars = dataInfo[0]
@@ -51,14 +52,13 @@ if __name__=="__main__":
     args = parser.parse_args()
     inputFiles = []
     dSet = args.dataset
-    for bkg,fileList in dSet.background.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
-    for sig,fileList in dSet.signal.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
+    sigFiles = dSet.signal
+    inputFiles = dSet.background
+    inputFiles.update(sigFiles)
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset = RootDataset(inputFiles, varSet, signal=False)
+    dataset = RootDataset(dSet.path, inputFiles, varSet, signal=False)
 
     for i in range(10):
         print("---"*50)
