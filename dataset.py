@@ -17,11 +17,12 @@ def get_all_vars(inputFolder, samples, variables, tree="tree"):
         for fileName in fileList:
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
+            branches = branches.head(22690) #Hardcoded only taking 30k events per file while we setup the code; should remove this when we want to do some serious trainings
             dSets.append(branches)
             if key == "signal":
-                signal += [True]*len(branches)
+                signal += list([0, 1] for _ in range(len(branches)))
             else:
-                signal += [False]*len(branches)
+                signal += list([1, 0] for _ in range(len(branches)))
     dataSet = pd.concat(dSets)
     return [dataSet,signal]
 
@@ -33,14 +34,16 @@ class RootDataset(udata.Dataset):
         self.vars = dataInfo[0]
         self.signal = dataInfo[1]
 
+    def get_arrays(self):
+        return np.array(self.signal), torch.from_numpy(self.vars.astype(float).values.copy()).float().squeeze(1)
+
     def __len__(self):
         return len(self.vars)
 
     def __getitem__(self, idx):
         data_np = self.vars.astype(float).values[idx]
-        label_np = torch.zeros(1, dtype=torch.long)
-        if self.signal[idx]:label_np += 1
-        label = label_np
+        label = torch.zeros(1, dtype=torch.long)
+        if self.signal[idx][1]: label += 1
         data = torch.from_numpy(data_np.copy())
         return label, data
 

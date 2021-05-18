@@ -7,7 +7,7 @@ config.dataset.background =  {"background": [
     "tree_QCD_Pt_600to800_MC2017",
 ]}
 config.features.uniform = ["pt"]
-config.features.train = ["pt","eta"]
+config.features.train = ["girth","tau21","tau32","msd","deltaphi","axisminor","axismajor","ptD","ecfN2b1","ecfN3b1","fChHad","fEle","fMu","fNeuHad","fPho"]
 config.features.spectator = ["mt","eta"]
 config.training.size = 0.5
 config.training.signal_id_method = "two"

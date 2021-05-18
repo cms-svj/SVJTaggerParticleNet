@@ -63,6 +63,7 @@ python -m pip install --no-cache-dir setuptools pip argparse --upgrade
 python -m pip install --no-cache-dir xxhash
 python -m pip install --no-cache-dir uproot4
 python -m pip install --no-cache-dir magiconfig
+python -m pip install --no-cache-dir tensorboardX
 if [[ "$DEV" == "1" ]]; then
 	$ECHO "\nInstalling the 'development' version of Coffea ... "
 	python -m pip install --no-cache-dir flake8 pytest coverage
@@ -72,7 +73,7 @@ if [[ "$DEV" == "1" ]]; then
 	cd ..
 else
 	$ECHO "Installing the 'production' version of Coffea ... "
-	python -m pip install --no-cache-dir coffea[dask,spark,parsl] 'pillow>=7.1.0'
+	python -m pip install --no-cache-dir coffea[dask,spark,parsl] 'pillow>=7.1.0' 'matplotlib>=3.4'
 fi
 
 ## apply patches
