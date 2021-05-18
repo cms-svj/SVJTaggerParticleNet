@@ -65,14 +65,13 @@ def main():
     print('Loading dataset ...')
     inputFiles = []
     dSet = args.dataset
-    for bkg,fileList in dSet.background.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
-    for sig,fileList in dSet.signal.items():
-        inputFiles += [dSet.path + fileName + '.root' for fileName in fileList]
+    sigFiles = dSet.signal
+    inputFiles = dSet.background
+    inputFiles.update(sigFiles)
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset = RootDataset(root_file=inputFiles, variables=varSet)
+    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet)
     sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader_train = udata.DataLoader(dataset=train, batch_size=args.batchSize, num_workers=0)
