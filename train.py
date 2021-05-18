@@ -23,13 +23,16 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
-def getROCStuff(dataset, model):
+def getNNOutput(dataset, model):
     labels, data = dataset.get_arrays()
     model.eval()
     out = model(data)
     output = f.softmax(out,dim=1)[:,0].detach().numpy()
-    fpr, tpr, thresholds = roc_curve(labels[:,0], output)
-    auc = roc_auc_score(labels[:,0], output)
+    return labels[:,0], output
+
+def getROCStuff(label, output):
+    fpr, tpr, thresholds = roc_curve(label, output)
+    auc = roc_auc_score(label, output)
     return fpr, tpr, auc
 
 def main():
@@ -72,7 +75,7 @@ def main():
     varSet = args.features.train
     print(varSet)
     dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet)
-    sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
+    sizes = get_sizes(len(dataset), [0.70, 0.15, 0.15])
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader_train = udata.DataLoader(dataset=train, batch_size=args.batchSize, num_workers=0)
     loader_val = udata.DataLoader(dataset=val, batch_size=args.batchSize, num_workers=0)
@@ -151,9 +154,10 @@ def main():
     plt.savefig(args.outf + "/loss_plot.png")
 
     # plot ROC curve
-    fpr_Train, tpr_Train, auc_Train = getROCStuff(train, model)
+    label_train, output_train = getNNOutput(dataset, model)
+    #label_test, output_test = getNNOutput(dataset, model)
+    fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
     fig = plt.figure()
-    #hep.cms.label(data=True, paper=False, year=self.config["year"])
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False positive rate')
     plt.ylabel('True positive rate')

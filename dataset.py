@@ -76,9 +76,11 @@ if __name__=="__main__":
     sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
 
+    print("-"*50)
+    print(dataset.variables)
+    print(train.variables)
+
     loader_train = udata.DataLoader(dataset=train, batch_size=5000, num_workers=0)
     loader_val = udata.DataLoader(dataset=val, batch_size=5000, num_workers=0)
     loader_test = udata.DataLoader(dataset=test, batch_size=5000, num_workers=0)
-
-    print(train.vars)
 
