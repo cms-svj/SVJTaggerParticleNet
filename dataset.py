@@ -2,39 +2,68 @@ import numpy as np
 import uproot as up
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-import random 
+from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
+from configs import configs as c
+import random
 import torch.utils.data as udata
-import torch 
+import torch
 import math
+import pandas as pd
 
-def get_all_vars(file_path, variables, tree="tree"):
-    f = up.open(file_path)
-    branches = f[tree].pandas.df(variables)
-    return branches
+def get_all_vars(inputFolder, samples, variables, tree="tree"):
+    dSets = []
+    signal = []
+    for key,fileList in samples.items():
+        for fileName in fileList:
+            f = up.open(inputFolder  + fileName + ".root")
+            branches = f[tree].pandas.df(variables)
+            branches = branches.head(22690) #Hardcoded only taking 30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            dSets.append(branches)
+            if key == "signal":
+                signal += list([0, 1] for _ in range(len(branches)))
+            else:
+                signal += list([1, 0] for _ in range(len(branches)))
+    dataSet = pd.concat(dSets)
+    return [dataSet,signal]
 
 class RootDataset(udata.Dataset):
-    def __init__(self, root_file, variables):
+    def __init__(self, inputFolder, root_file, variables, signal=False):
+        dataInfo = get_all_vars(inputFolder, root_file, variables)
         self.root_file = root_file
         self.variables = variables
-        self.vars = get_all_vars(root_file, variables)
-        self.signal = False
+        self.vars = dataInfo[0]
+        self.signal = dataInfo[1]
+
+    def get_arrays(self):
+        return np.array(self.signal), torch.from_numpy(self.vars.astype(float).values.copy()).float().squeeze(1)
 
     def __len__(self):
         return len(self.vars)
 
     def __getitem__(self, idx):
         data_np = self.vars.astype(float).values[idx]
-        label_np = torch.zeros(1, dtype=torch.long)
-        if self.signal: label_np += 1
-                
-        label = label_np
+        label = torch.zeros(1, dtype=torch.long)
+        if self.signal[idx][1]: label += 1
         data = torch.from_numpy(data_np.copy())
-        return label, data 
+        return label, data
 
 if __name__=="__main__":
-    dataset = RootDataset("tree_QCD_Pt_600to800_MC2017.root", ["pt","eta"])
-    
+    # parse arguments
+    parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
+    parser.add_config_only(*c.config_schema)
+    parser.add_config_only(**c.config_defaults)
+    args = parser.parse_args()
+    inputFiles = []
+    dSet = args.dataset
+    sigFiles = dSet.signal
+    inputFiles = dSet.background
+    inputFiles.update(sigFiles)
+    print(inputFiles)
+    varSet = args.features.train
+    print(varSet)
+    dataset = RootDataset(dSet.path, inputFiles, varSet, signal=False)
+
     for i in range(10):
         print("---"*50)
-        label, data = dataset.__getitem__(i)         
-
+        label, data = dataset.__getitem__(i)
+        print(label,data)
