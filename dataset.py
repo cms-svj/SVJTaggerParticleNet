@@ -16,11 +16,12 @@ def get_all_vars(samples, variables, tree="tree"):
     for fileName in samples:
         f = up.open(fileName)
         branches = f[tree].pandas.df(variables)
+        branches = branches.head(22690) #Hardcoded only taking 30k events per file while we setup the code; should remove this when we want to do some serious trainings
         dSets.append(branches)
         if "SVJ" in fileName:
-            signal += [True]*len(branches)
+            signal += list([0, 1] for _ in range(len(branches)))
         else:
-            signal += [False]*len(branches)
+            signal += list([1, 0] for _ in range(len(branches)))
     dataSet = pd.concat(dSets)
     return [dataSet,signal]
 
@@ -28,18 +29,20 @@ class RootDataset(udata.Dataset):
     def __init__(self, root_file, variables,signal=False):
         dataInfo = get_all_vars(root_file, variables)
         self.root_file = root_file
-        self.variables = variables
+        self.variables = variables        
         self.vars = dataInfo[0]
         self.signal = dataInfo[1]
+
+    def get_arrays(self):
+        return np.array(self.signal), torch.from_numpy(self.vars.astype(float).values.copy()).float().squeeze(1)
 
     def __len__(self):
         return len(self.vars)
 
     def __getitem__(self, idx):
         data_np = self.vars.astype(float).values[idx]
-        label_np = torch.zeros(1, dtype=torch.long)
-        if self.signal[idx]:label_np += 1
-        label = label_np
+        label = torch.zeros(1, dtype=torch.long)
+        if self.signal[idx][1]: label += 1
         data = torch.from_numpy(data_np.copy())
         return label, data
 
@@ -64,3 +67,4 @@ if __name__=="__main__":
         print("---"*50)
         label, data = dataset.__getitem__(i)
         print(label,data)
+
