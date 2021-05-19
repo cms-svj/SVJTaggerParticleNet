@@ -13,8 +13,8 @@ def get_all_vars(inputFolder, samples, variables, tree="tree"):
         for fileName in fileList:
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
-            #branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
-            branches = branches.head(5000)
+            branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            # branches = branches.head(5000)
             dSets.append(branches)
             if key == "signal":
                 signal += list([0, 1] for _ in range(len(branches)))
@@ -72,7 +72,7 @@ if __name__=="__main__":
     #    print("---"*50)
     #    label, data = dataset.__getitem__(i)
     #    print(label,data)
-    
+
     sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
 
@@ -83,4 +83,3 @@ if __name__=="__main__":
     loader_train = udata.DataLoader(dataset=train, batch_size=5000, num_workers=0)
     loader_val = udata.DataLoader(dataset=val, batch_size=5000, num_workers=0)
     loader_test = udata.DataLoader(dataset=test, batch_size=5000, num_workers=0)
-
