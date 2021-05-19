@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.utils.data as udata
 import torch.optim as optim
 import os
-from models import DNN, PatchLoss, WeightedPatchLoss
+from models import DNN
 from dataset import RootDataset, get_sizes
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
@@ -122,13 +122,13 @@ def main():
             batch_loss.backward()
             optimizer.step()
             model.eval()
-            loss=batch_loss.item()
-            train_loss+=loss
+            train_loss+=batch_loss.item()
             writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
             del label
             del d
             del output
             del batch_loss
+        train_loss /= len(loader_train)
         training_losses[epoch] = train_loss
         print("t: "+ str(train_loss))
 
@@ -143,6 +143,7 @@ def main():
             del val_d
             del val_output
             del output_loss
+        val_loss /= len(loader_val)
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
         print("v: "+ str(val_loss))
