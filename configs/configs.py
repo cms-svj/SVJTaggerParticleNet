@@ -8,7 +8,7 @@ config_schema_dict = {
     "dataset":  ["path","signal","background"],
     "features": ["uniform","train","spectator"],
     "training": ["size","signal_id_method","signal_weight_method","weights","algorithms"],
-    "hyper":    ["max_depth","n_estimators","subsample","learning_rate","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss"],
+    "hyper":    ["max_depth","n_estimators","subsample","learning_rate","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss","num_of_layers","num_of_nodes","dropout","epochs"],
 }
 config_schema = make_schema(config_schema_dict)
 
@@ -16,4 +16,3 @@ config_schema = make_schema(config_schema_dict)
 config_defaults = {
     "dataset.path": None, "dataset.background": None, "dataset.signal": None
 }
-
