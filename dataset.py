@@ -1,13 +1,9 @@
 import numpy as np
 import uproot as up
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
-import random
 import torch.utils.data as udata
 import torch
-import math
 import pandas as pd
 
 def get_all_vars(inputFolder, samples, variables, tree="tree"):
@@ -17,7 +13,8 @@ def get_all_vars(inputFolder, samples, variables, tree="tree"):
         for fileName in fileList:
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
-            branches = branches.head(22690) #Hardcoded only taking 30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            # branches = branches.head(5000)
             dSets.append(branches)
             if key == "signal":
                 signal += list([0, 1] for _ in range(len(branches)))
@@ -26,8 +23,16 @@ def get_all_vars(inputFolder, samples, variables, tree="tree"):
     dataSet = pd.concat(dSets)
     return [dataSet,signal]
 
+def get_sizes(l, frac=[0.8, 0.1, 0.1]):
+    if sum(frac) != 1.0: raise ValueError("Sum of fractions does not equal 1.0")
+    if len(frac) != 3: raise ValueError("Need three numbers in list for train, test, and val respectively")
+    train_size = int(frac[0]*l)
+    test_size = int(frac[1]*l)
+    val_size = l - train_size - test_size
+    return [train_size, test_size, val_size]
+
 class RootDataset(udata.Dataset):
-    def __init__(self, inputFolder, root_file, variables, signal=False):
+    def __init__(self, inputFolder, root_file, variables):
         dataInfo = get_all_vars(inputFolder, root_file, variables)
         self.root_file = root_file
         self.variables = variables
@@ -61,9 +66,10 @@ if __name__=="__main__":
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset = RootDataset(dSet.path, inputFiles, varSet, signal=False)
-
-    for i in range(10):
-        print("---"*50)
-        label, data = dataset.__getitem__(i)
-        print(label,data)
+    dataset = RootDataset(dSet.path, inputFiles, varSet)
+    sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
+    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+    loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
+    l, d = next(iter(loader))
+    labels = l.squeeze(1).numpy()
+    data = d.float()
