@@ -42,12 +42,7 @@ def getROCStuff(label, output):
 def main():
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
-    parser.add_argument("--num_of_layers", type=int, default=9, help="Number of total layers in the CNN")
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--epochs", type=int, default=10, help="Number of training epochs")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
-    parser.add_argument("--trainfile", type=str, default="test.root", help='Path to .root file for training')
-    parser.add_argument("--valfile", type=str, default="test.root", help='Path to .root file for validation')
     parser.add_argument("--batchSize", type=int, default=500, help="Training batch size")
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
     parser.add_argument("--patchSize", type=int, default=20, help="Size of patches to apply in loss function")
@@ -74,6 +69,7 @@ def main():
     dSet = args.dataset
     sigFiles = dSet.signal
     inputFiles = dSet.background
+    hyper = args.hyper
     inputFiles.update(sigFiles)
     print(inputFiles)
     varSet = args.features.train
@@ -86,7 +82,7 @@ def main():
     loader_test = udata.DataLoader(dataset=test, batch_size=args.batchSize, num_workers=0)
 
     # Build model
-    model = DNN(n_var=len(varSet), n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3).to(device=args.device)
+    model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
     if (args.model == None):
         model.apply(init_weights)
         print("Creating new model ")
@@ -100,16 +96,16 @@ def main():
     criterion.to(device=args.device)
 
     #Optimizer
-    optimizer = optim.Adam(model.parameters(), lr = args.lr)
+    optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, patience=10, verbose=True)
 
     # training and validation
     writer = SummaryWriter()
     step = 0
-    training_losses = np.zeros(args.epochs)
-    validation_losses = np.zeros(args.epochs)
-    for epoch in range(args.epochs):
-        print("Beginning epoch {}".format(str(epoch)))
+    training_losses = np.zeros(hyper.epochs)
+    validation_losses = np.zeros(hyper.epochs)
+    for epoch in range(hyper.epochs):
+        print("Beginning epoch " + str(epoch))
         # training
         train_loss = 0
         for i, data in tqdm(enumerate(loader_train), unit="batch", total=len(loader_train)):
@@ -147,7 +143,7 @@ def main():
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
         print("v: "+ str(val_loss))
-        
+
         # save the model
         model.eval()
         torch.save(model.state_dict(), os.path.join(args.outf, 'net.pth'))
@@ -176,6 +172,25 @@ def main():
     plt.legend(loc='best')
     fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
     plt.close(fig)
+
+    # plot discriminator
+    bins = np.linspace(0, 1, 100)
+    fig, ax = plt.subplots(figsize=(6, 6))
+    y_Train_Sg = []
+    y_Train_Bg = []
+    for lt in range(len(label_train)):
+        lbl = label_train[lt]
+        if lbl == 1:
+            y_Train_Sg.append(output_train[lt])
+        else:
+            y_Train_Bg.append(output_train[lt])
+    ax.set_title('')
+    ax.set_ylabel('Norm Events')
+    ax.set_xlabel('Discriminator')
+    plt.hist(y_Train_Sg, bins, color='xkcd:red', alpha=0.9, histtype='step', lw=2, label='Sg Train', density=True)
+    plt.hist(y_Train_Bg, bins, color='xkcd:blue', alpha=0.9, histtype='step', lw=2, label='Bg Train', density=True)
+    ax.legend(loc='best', frameon=False)
+    fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi)
 
 if __name__ == "__main__":
     main()
