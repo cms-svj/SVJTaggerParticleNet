@@ -13,6 +13,7 @@ from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHel
 from configs import configs as c
 import numpy as np
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
+from tqdm import tqdm
 
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -24,11 +25,14 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 def getNNOutput(dataset, model):
-    labels, data = dataset.get_arrays()
+    loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
+    l, d = next(iter(loader))
+    labels = l.squeeze(1).numpy()
+    data = d.float()
     model.eval()
     out = model(data)
-    output = f.softmax(out,dim=1)[:,0].detach().numpy()
-    return labels[:,0], output
+    output = f.softmax(out,dim=1)[:,1].detach().numpy()
+    return labels, output
 
 def getROCStuff(label, output):
     fpr, tpr, thresholds = roc_curve(label, output)
@@ -104,7 +108,7 @@ def main():
         print("Beginning epoch " + str(epoch))
         # training
         train_loss = 0
-        for i, data in enumerate(loader_train, 0):
+        for i, data in tqdm(enumerate(loader_train), unit="batch", total=len(loader_train)):
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
@@ -114,7 +118,8 @@ def main():
             batch_loss.backward()
             optimizer.step()
             model.eval()
-            train_loss+=batch_loss.item()
+            loss=batch_loss.item()
+            train_loss+=loss
             writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
             del label
             del d
@@ -125,7 +130,7 @@ def main():
 
         # validation
         val_loss = 0
-        for i, data in enumerate(loader_val, 0):
+        for i, data in enumerate(loader_val):
             val_label, val_d =  data
             val_output = model((val_d.float().to(args.device)))
             output_loss = criterion(val_output.to(args.device), val_label.squeeze(1).to(args.device)).to(args.device)
@@ -144,6 +149,7 @@ def main():
     writer.close()
 
     # plot loss/epoch for training and validation sets
+    print("Making validation plots")
     training = plt.plot(training_losses, label='training')
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
@@ -151,15 +157,17 @@ def main():
 
     # plot ROC curve
     model.to('cpu')
-    label_train, output_train = getNNOutput(dataset, model)
-    #label_test, output_test = getNNOutput(dataset, model)
+    label_train, output_train = getNNOutput(train, model)
+    label_test, output_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
+    fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test)
     fig = plt.figure()
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False positive rate')
     plt.ylabel('True positive rate')
     plt.title('ROC curve', pad=45.0)
-    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train))
+    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train), color='xkcd:red')
+    plt.plot(fpr_Test, tpr_Test, label="Test (area = {:.3f})".format(auc_Test), color='xkcd:black')
     plt.legend(loc='best')
     fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
     plt.close(fig)
