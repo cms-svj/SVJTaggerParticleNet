@@ -13,6 +13,7 @@ from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHel
 from configs import configs as c
 import numpy as np
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
+from tqdm import tqdm
 
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -108,10 +109,10 @@ def main():
     training_losses = np.zeros(args.epochs)
     validation_losses = np.zeros(args.epochs)
     for epoch in range(args.epochs):
-        print("Beginning epoch " + str(epoch))
+        print("Beginning epoch {}".format(str(epoch)))
         # training
         train_loss = 0
-        for i, data in enumerate(loader_train, 0):
+        for i, data in tqdm(enumerate(loader_train), unit="batch", total=len(loader_train)):
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
@@ -121,7 +122,8 @@ def main():
             batch_loss.backward()
             optimizer.step()
             model.eval()
-            train_loss+=batch_loss.item()
+            loss=batch_loss.item()
+            train_loss+=loss
             writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
             del label
             del d
@@ -132,7 +134,7 @@ def main():
 
         # validation
         val_loss = 0
-        for i, data in enumerate(loader_val, 0):
+        for i, data in enumerate(loader_val):
             val_label, val_d =  data
             val_output = model((val_d.float().to(args.device)))
             output_loss = criterion(val_output.to(args.device), val_label.squeeze(1).to(args.device)).to(args.device)
@@ -151,6 +153,7 @@ def main():
     writer.close()
 
     # plot loss/epoch for training and validation sets
+    print("Making validation plots")
     training = plt.plot(training_losses, label='training')
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
