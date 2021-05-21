@@ -13,8 +13,8 @@ def get_all_vars(inputFolder, samples, variables, tree="tree"):
         for fileName in fileList:
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
-            branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
-            # branches = branches.head(5000)
+            #branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            #branches = branches.head(5000)
             dSets.append(branches)
             if key == "signal":
                 signal += list([0, 1] for _ in range(len(branches)))
@@ -36,8 +36,9 @@ class RootDataset(udata.Dataset):
         dataInfo = get_all_vars(inputFolder, root_file, variables)
         self.root_file = root_file
         self.variables = variables
-        self.vars = dataInfo[0]
+        self.vars = dataInfo[0].astype(float).values
         self.signal = dataInfo[1]
+        print("Number of events:", len(self.signal))
 
     def get_arrays(self):
         return np.array(self.signal), torch.from_numpy(self.vars.astype(float).values.copy()).float().squeeze(1)
@@ -46,10 +47,14 @@ class RootDataset(udata.Dataset):
         return len(self.vars)
 
     def __getitem__(self, idx):
-        data_np = self.vars.astype(float).values[idx]
-        label = torch.zeros(1, dtype=torch.long)
-        if self.signal[idx][1]: label += 1
-        data = torch.from_numpy(data_np.copy())
+        data_np = self.vars[idx].copy()
+        label_np = np.zeros(1, dtype=np.long).copy()
+
+        if self.signal[idx][1]: 
+            label_np += 1
+
+        data  = torch.from_numpy(data_np)
+        label = torch.from_numpy(label_np)
         return label, data
 
 if __name__=="__main__":
