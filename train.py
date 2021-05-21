@@ -1,3 +1,4 @@
+#!/bin/env python
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -6,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.utils.data as udata
 import torch.optim as optim
 import os
-from models import DNN, PatchLoss, WeightedPatchLoss
+from models import DNN
 from dataset import RootDataset, get_sizes
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
@@ -39,15 +40,22 @@ def getROCStuff(label, output):
     auc = roc_auc_score(label, output)
     return fpr, tpr, auc
 
+def getSgBgOutputs(label, output):
+    y_Sg = []
+    y_Bg = []
+    for lt in range(len(label)):
+        lbl = label[lt]
+        if lbl == 1:
+            y_Sg.append(output[lt])
+        else:
+            y_Bg.append(output[lt])
+    return y_Sg, y_Bg
+
 def main():
     # parse arguments
-    parser = ArgumentParser(config_options=MagiConfigOptions(strict = True),formatter_class=ArgumentDefaultsRawHelpFormatter)
+    parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--batchSize", type=int, default=500, help="Training batch size")
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
-    parser.add_argument("--patchSize", type=int, default=20, help="Size of patches to apply in loss function")
-    parser.add_argument("--kernelSize", type=int, default=3, help="Size of kernel in CNN")
-    parser.add_argument("--num_of_features", type=int, default=9, help="Number of features in CNN layers")
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
@@ -75,11 +83,11 @@ def main():
     varSet = args.features.train
     print(varSet)
     dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet)
-    sizes = get_sizes(len(dataset), [0.70, 0.15, 0.15])
+    sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-    loader_train = udata.DataLoader(dataset=train, batch_size=args.batchSize, num_workers=0)
-    loader_val = udata.DataLoader(dataset=val, batch_size=args.batchSize, num_workers=0)
-    loader_test = udata.DataLoader(dataset=test, batch_size=args.batchSize, num_workers=0)
+    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0)
+    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
+    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
 
     # Build model
     model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
@@ -101,7 +109,6 @@ def main():
 
     # training and validation
     writer = SummaryWriter()
-    step = 0
     training_losses = np.zeros(hyper.epochs)
     validation_losses = np.zeros(hyper.epochs)
     for epoch in range(hyper.epochs):
@@ -118,13 +125,13 @@ def main():
             batch_loss.backward()
             optimizer.step()
             model.eval()
-            loss=batch_loss.item()
-            train_loss+=loss
+            train_loss+=batch_loss.item()
             writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
             del label
             del d
             del output
             del batch_loss
+        train_loss /= len(loader_train)
         training_losses[epoch] = train_loss
         print("t: "+ str(train_loss))
 
@@ -139,6 +146,7 @@ def main():
             del val_d
             del val_output
             del output_loss
+        val_loss /= len(loader_val)
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
         print("v: "+ str(val_loss))
@@ -175,19 +183,15 @@ def main():
     # plot discriminator
     bins = np.linspace(0, 1, 100)
     fig, ax = plt.subplots(figsize=(6, 6))
-    y_Train_Sg = []
-    y_Train_Bg = []
-    for lt in range(len(label_train)):
-        lbl = label_train[lt]
-        if lbl == 1:
-            y_Train_Sg.append(output_train[lt])
-        else:
-            y_Train_Bg.append(output_train[lt])
+    y_Train_Sg, y_Train_Bg = getSgBgOutputs(label_train, output_train)
+    y_test_Sg, y_test_Bg = getSgBgOutputs(label_test, output_test)
     ax.set_title('')
     ax.set_ylabel('Norm Events')
     ax.set_xlabel('Discriminator')
     plt.hist(y_Train_Sg, bins, color='xkcd:red', alpha=0.9, histtype='step', lw=2, label='Sg Train', density=True)
     plt.hist(y_Train_Bg, bins, color='xkcd:blue', alpha=0.9, histtype='step', lw=2, label='Bg Train', density=True)
+    plt.hist(y_test_Sg,  bins, color='xkcd:green', alpha=0.9, histtype='step', lw=2, label='Sg Test', density=True)
+    plt.hist(y_test_Bg,  bins, color='xkcd:magenta', alpha=0.9, histtype='step', lw=2, label='Bg Test', density=True)
     ax.legend(loc='best', frameon=False)
     fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi)
 
