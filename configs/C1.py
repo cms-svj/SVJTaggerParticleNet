@@ -29,11 +29,14 @@ config.dataset.background =  {"background": [
     "tree_TTJets_HT2500toInf_MC2017",
 ]}
 config.dataset.sample_fractions = [0.70, 0.15, 0.15]
-#config.features.uniform = ["pt"]
+config.features.uniform = "pt"
 config.features.train = ["girth","tau21","tau32","msd","deltaphi","axisminor","axismajor","ptD","ecfN2b1","ecfN3b1","fChHad","fEle","fMu","fNeuHad","fPho"]
 config.hyper.learning_rate = 1e-3
 config.hyper.batchSize = 5000
-config.hyper.num_of_layers = 4
+config.hyper.num_of_layers = 1
 config.hyper.num_of_nodes = 40
 config.hyper.dropout = 0.3
 config.hyper.epochs = 10
+config.hyper.lambdaTag = 1.0
+config.hyper.lambdaReg = 1e-2
+config.hyper.lambdaGR = 1.0

@@ -64,6 +64,7 @@ python -m pip install --no-cache-dir xxhash
 python -m pip install --no-cache-dir uproot4
 python -m pip install --no-cache-dir magiconfig
 python -m pip install --no-cache-dir tensorboardX
+python -m pip install --no-cache-dir torchsummary
 if [[ "$DEV" == "1" ]]; then
 	$ECHO "\nInstalling the 'development' version of Coffea ... "
 	python -m pip install --no-cache-dir flake8 pytest coverage
