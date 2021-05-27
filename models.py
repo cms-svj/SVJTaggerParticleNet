@@ -2,9 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 from torch.autograd import Variable
+from GradientReversal import GradientReversalFunction
+from GradientReversal import GradientReversal as GR
+from torchsummary import summary
 
 class DNN(nn.Module):
-    def __init__(self, n_var=10, n_layers=1, n_nodes=20, n_outputs=2, drop_out_p=0.3):
+    def __init__(self, n_var=10, n_layers=1, n_nodes=100, n_outputs=2, drop_out_p=0.3):
         super(DNN, self).__init__()
         layers = []
         layers.append(nn.Linear(n_var, n_nodes))
@@ -17,12 +20,45 @@ class DNN(nn.Module):
         layers.append(nn.Dropout(p=drop_out_p))
         layers.append(nn.Linear(n_nodes, n_outputs))
 
-
-
         self.dnn = nn.Sequential(*layers)
 
     def forward(self, x):
         return self.dnn(x)
+
+class DNN_GRF(nn.Module):
+    def __init__(self, n_var=10, n_layers=1, n_nodes=100, n_outputs=2, drop_out_p=0.3):
+        super(DNN_GRF, self).__init__()
+
+        # Input and feature layers
+        self.feature = nn.Sequential()
+        self.feature.add_module('i_linear1', nn.Linear(n_var, n_nodes))
+        self.feature.add_module('i_relu1',   nn.ReLU())
+        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+            self.feature.add_module('f_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
+            self.feature.add_module('f_relu{}'.format(i+1),   nn.ReLU())
+
+        # Jet tagger classifer
+        self.tagger = nn.Sequential()
+        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+            self.tagger.add_module('t_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
+            self.tagger.add_module('t_relu{}'.format(i+1),   nn.ReLU())
+        self.tagger.add_module('t_dropout',   nn.Dropout(p=drop_out_p))
+        self.tagger.add_module('t_linearOut', nn.Linear(n_nodes, n_outputs))
+
+        # Jet pT regression
+        self.regression = nn.Sequential()
+        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+            self.regression.add_module('r_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
+            self.regression.add_module('r_relu{}'.format(i+1),   nn.ReLU())
+        self.regression.add_module('r_dropout',   nn.Dropout(p=drop_out_p))
+        self.regression.add_module('r_linearOut', nn.Linear(n_nodes, 1))
+
+    def forward(self, input_data, lambdaGR=1.0):
+        feature = self.feature(input_data)
+        tagger_output = self.tagger(feature)
+        reverse_feature = GradientReversalFunction.apply(feature, lambdaGR)
+        regression_output = self.regression(reverse_feature)
+        return tagger_output, regression_output
 
 if __name__=="__main__":
     # Test CrossEntropyLoss function
@@ -48,4 +84,15 @@ if __name__=="__main__":
     target = torch.empty(5, dtype=torch.long).random_(2)
     output = loss(out, target)
     output.backward()
+
+    # Print model info
+    dnn = DNN(n_var=10, n_layers=1)
+    summary(dnn, (1,10))
+    out = dnn(input)
+    print(out)
+
+    dnn_grf = DNN_GRF(n_var=10, n_layers=1)
+    summary(dnn_grf, [(1,10), (1,1)])
+    out, reg = dnn_grf(input_data=input, lambdaGR=1.0)
+    print(out, reg)
 

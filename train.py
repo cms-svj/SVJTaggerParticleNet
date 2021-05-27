@@ -7,7 +7,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch.utils.data as udata
 import torch.optim as optim
 import os
-from models import DNN
+from models import DNN, DNN_GRF
 from dataset import RootDataset, get_sizes
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
@@ -27,13 +27,14 @@ def init_weights(m):
 
 def getNNOutput(dataset, model):
     loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
-    l, d = next(iter(loader))
+    l, d, p = next(iter(loader))
     labels = l.squeeze(1).numpy()
     data = d.float()
+    pT = p.squeeze(1).float().numpy()
     model.eval()
-    out = model(data)
+    out, _ = model(data)
     output = f.softmax(out,dim=1)[:,1].detach().numpy()
-    return labels, output
+    return labels, output, pT
 
 def getROCStuff(label, output):
     fpr, tpr, thresholds = roc_curve(label, output)
@@ -50,6 +51,15 @@ def getSgBgOutputs(label, output):
         else:
             y_Bg.append(output[lt])
     return y_Sg, y_Bg
+
+def processBatch(args, data, model, criterions, lambdas):
+    label, d, pt = data
+    l1, l2, lgr = lambdas
+    output, output_reg = model(d.float().to(args.device), lgr)
+    criterion, criterion_reg = criterions
+    batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
+    batch_loss_reg = criterion_reg(output_reg.to(args.device), pt.to(args.device)).to(args.device)
+    return l1*batch_loss + l2*batch_loss_reg        
 
 def main():
     # parse arguments
@@ -73,7 +83,6 @@ def main():
 
     # Load dataset
     print('Loading dataset ...')
-    inputFiles = []
     dSet = args.dataset
     sigFiles = dSet.signal
     inputFiles = dSet.background
@@ -82,7 +91,8 @@ def main():
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet)
+    uniform = args.features.uniform
+    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, uniform=uniform)
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0)
@@ -90,7 +100,8 @@ def main():
     loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
 
     # Build model
-    model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
+    #model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
+    model = DNN_GRF(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
     if (args.model == None):
         model.apply(init_weights)
         print("Creating new model ")
@@ -101,7 +112,9 @@ def main():
 
     # Loss function
     criterion = nn.CrossEntropyLoss()
+    criterion_reg = nn.MSELoss()
     criterion.to(device=args.device)
+    criterion_reg.to(device=args.device)
 
     #Optimizer
     optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate)
@@ -119,18 +132,12 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            label, d = data
-            output = model((d.float().to(args.device)))
-            batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
-            batch_loss.backward()
+            batch_loss_total = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            batch_loss_total.backward()
             optimizer.step()
             model.eval()
-            train_loss+=batch_loss.item()
+            train_loss+=batch_loss_total.item()
             writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
-            del label
-            del d
-            del output
-            del batch_loss
         train_loss /= len(loader_train)
         training_losses[epoch] = train_loss
         print("t: "+ str(train_loss))
@@ -138,14 +145,8 @@ def main():
         # validation
         val_loss = 0
         for i, data in enumerate(loader_val):
-            val_label, val_d =  data
-            val_output = model((val_d.float().to(args.device)))
-            output_loss = criterion(val_output.to(args.device), val_label.squeeze(1).to(args.device)).to(args.device)
-            val_loss+=output_loss.item()
-            del val_label
-            del val_d
-            del val_output
-            del output_loss
+            output_loss_total = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            val_loss+=output_loss_total.item()
         val_loss /= len(loader_val)
         scheduler.step(torch.tensor([val_loss]))
         validation_losses[epoch] = val_loss
@@ -165,8 +166,8 @@ def main():
 
     # plot ROC curve
     model.to('cpu')
-    label_train, output_train = getNNOutput(train, model)
-    label_test, output_test = getNNOutput(test, model)
+    label_train, output_train, pT_train = getNNOutput(train, model)
+    label_test, output_test, pT_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test)
     fig = plt.figure()
