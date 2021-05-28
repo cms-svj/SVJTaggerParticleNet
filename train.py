@@ -36,22 +36,6 @@ def getNNOutput(dataset, model):
     output = f.softmax(out,dim=1)[:,1].detach().numpy()
     return labels, output, pT
 
-def getROCStuff(label, output):
-    fpr, tpr, thresholds = roc_curve(label, output)
-    auc = roc_auc_score(label, output)
-    return fpr, tpr, auc
-
-def getSgBgOutputs(label, output):
-    y_Sg = []
-    y_Bg = []
-    for lt in range(len(label)):
-        lbl = label[lt]
-        if lbl == 1:
-            y_Sg.append(output[lt])
-        else:
-            y_Bg.append(output[lt])
-    return y_Sg, y_Bg
-
 def processBatch(args, data, model, criterions, lambdas):
     label, d, pt = data
     l1, l2, lgr = lambdas
@@ -59,7 +43,7 @@ def processBatch(args, data, model, criterions, lambdas):
     criterion, criterion_reg = criterions
     batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
     batch_loss_reg = criterion_reg(output_reg.to(args.device), pt.to(args.device)).to(args.device)
-    return l1*batch_loss + l2*batch_loss_reg        
+    return l1*batch_loss + l2*batch_loss_reg
 
 def main():
     # parse arguments
@@ -163,38 +147,6 @@ def main():
     validation = plt.plot(validation_losses, label='validation')
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-
-    # plot ROC curve
-    model.to('cpu')
-    label_train, output_train, pT_train = getNNOutput(train, model)
-    label_test, output_test, pT_test = getNNOutput(test, model)
-    fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
-    fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test)
-    fig = plt.figure()
-    plt.plot([0, 1], [0, 1], 'k--')
-    plt.xlabel('False positive rate')
-    plt.ylabel('True positive rate')
-    plt.title('ROC curve', pad=45.0)
-    plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train), color='xkcd:red')
-    plt.plot(fpr_Test, tpr_Test, label="Test (area = {:.3f})".format(auc_Test), color='xkcd:black')
-    plt.legend(loc='best')
-    fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
-    plt.close(fig)
-
-    # plot discriminator
-    bins = np.linspace(0, 1, 100)
-    fig, ax = plt.subplots(figsize=(6, 6))
-    y_Train_Sg, y_Train_Bg = getSgBgOutputs(label_train, output_train)
-    y_test_Sg, y_test_Bg = getSgBgOutputs(label_test, output_test)
-    ax.set_title('')
-    ax.set_ylabel('Norm Events')
-    ax.set_xlabel('Discriminator')
-    plt.hist(y_Train_Sg, bins, color='xkcd:red', alpha=0.9, histtype='step', lw=2, label='Sg Train', density=True)
-    plt.hist(y_Train_Bg, bins, color='xkcd:blue', alpha=0.9, histtype='step', lw=2, label='Bg Train', density=True)
-    plt.hist(y_test_Sg,  bins, color='xkcd:green', alpha=0.9, histtype='step', lw=2, label='Sg Test', density=True)
-    plt.hist(y_test_Bg,  bins, color='xkcd:magenta', alpha=0.9, histtype='step', lw=2, label='Bg Test', density=True)
-    ax.legend(loc='best', frameon=False)
-    fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi)
 
 if __name__ == "__main__":
     main()

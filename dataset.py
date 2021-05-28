@@ -41,11 +41,13 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
 class RootDataset(udata.Dataset):
     def __init__(self, inputFolder, root_file, variables, uniform):
         dataSet, signal, pT = get_all_vars(inputFolder, root_file, variables, uniform)
+        print(type(dataSet))
         self.root_file = root_file
         self.variables = variables
         self.uniform = uniform
         self.vars = dataSet.astype(float).values
         self.signal = signal
+        self.dataFrame = dataSet
         self.pT = pT.astype(float).values
         print("Number of events:", len(self.signal))
 
@@ -60,7 +62,7 @@ class RootDataset(udata.Dataset):
         label_np = np.zeros(1, dtype=np.long).copy()
         pT_np = self.pT[idx].copy()
 
-        if self.signal[idx][1]: 
+        if self.signal[idx][1]:
             label_np += 1
 
         data  = torch.from_numpy(data_np)
@@ -93,4 +95,3 @@ if __name__=="__main__":
     print(labels)
     print(data)
     print(pT)
-
