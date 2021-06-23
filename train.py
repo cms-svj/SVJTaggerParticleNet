@@ -25,25 +25,14 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
-def getNNOutput(dataset, model):
-    loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
-    l, d, p = next(iter(loader))
-    labels = l.squeeze(1).numpy()
-    data = d.float()
-    pT = p.squeeze(1).float().numpy()
-    model.eval()
-    out, _ = model(data)
-    output = f.softmax(out,dim=1)[:,1].detach().numpy()
-    return labels, output, pT
-
 def processBatch(args, data, model, criterions, lambdas):
-    label, d, pt = data
+    label, d, pt, mT, w = data
     l1, l2, lgr = lambdas
     output, output_reg = model(d.float().to(args.device), lgr)
     criterion, criterion_reg = criterions
     batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
     batch_loss_reg = criterion_reg(output_reg.to(args.device), pt.to(args.device)).to(args.device)
-    return l1*batch_loss + l2*batch_loss_reg
+    return l1*batch_loss,l2*lgr*batch_loss_reg
 
 def main():
     # parse arguments
@@ -76,12 +65,14 @@ def main():
     varSet = args.features.train
     print(varSet)
     uniform = args.features.uniform
-    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, uniform=uniform)
+    mT = args.features.mT
+    weight = args.features.weight
+    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, uniform=uniform, mT=mT, weight=weight)
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0)
-    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
-    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
+    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=4, shuffle=True)
+    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=4)
+    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=4)
 
     # Build model
     #model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
@@ -106,35 +97,61 @@ def main():
 
     # training and validation
     writer = SummaryWriter()
-    training_losses = np.zeros(hyper.epochs)
-    validation_losses = np.zeros(hyper.epochs)
+    training_losses_tag = np.zeros(hyper.epochs)
+    training_losses_reg = np.zeros(hyper.epochs)
+    training_losses_total = np.zeros(hyper.epochs)
+    validation_losses_tag = np.zeros(hyper.epochs)
+    validation_losses_reg = np.zeros(hyper.epochs)
+    validation_losses_total = np.zeros(hyper.epochs)
     for epoch in range(hyper.epochs):
         print("Beginning epoch " + str(epoch))
         # training
-        train_loss = 0
+        train_loss_tag = 0
+        train_loss_reg = 0
+        train_loss_total = 0
         for i, data in tqdm(enumerate(loader_train), unit="batch", total=len(loader_train)):
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_total = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            batch_loss_tag,batch_loss_reg = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            batch_loss_total = batch_loss_tag + batch_loss_reg
             batch_loss_total.backward()
             optimizer.step()
             model.eval()
-            train_loss+=batch_loss_total.item()
-            writer.add_scalar('training loss', train_loss / 1000, epoch * len(loader_train) + i)
-        train_loss /= len(loader_train)
-        training_losses[epoch] = train_loss
-        print("t: "+ str(train_loss))
+            train_loss_tag += batch_loss_tag.item()
+            train_loss_reg += batch_loss_reg.item()
+            train_loss_total+=batch_loss_total.item()
+            writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
+        train_loss_tag /= len(loader_train)
+        train_loss_reg /= len(loader_train)
+        train_loss_total /= len(loader_train)
+        training_losses_tag[epoch] = train_loss_tag
+        training_losses_reg[epoch] = train_loss_reg
+        training_losses_total[epoch] = train_loss_total
+        print("t_tag: "+ str(train_loss_tag))
+        print("t_reg: "+ str(train_loss_reg))
+        print("t_total: "+ str(train_loss_total))
 
         # validation
-        val_loss = 0
+        val_loss_tag = 0
+        val_loss_reg = 0
+        val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_total = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
-            val_loss+=output_loss_total.item()
-        val_loss /= len(loader_val)
-        scheduler.step(torch.tensor([val_loss]))
-        validation_losses[epoch] = val_loss
-        print("v: "+ str(val_loss))
+            output_loss_tag,output_loss_reg = processBatch(args, data, model, [criterion, criterion_reg], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            output_loss_total = output_loss_tag + output_loss_reg
+            val_loss_tag+=output_loss_tag.item()
+            val_loss_reg+=output_loss_reg.item()
+            val_loss_total+=output_loss_total.item()
+        val_loss_tag /= len(loader_val)
+        val_loss_reg /= len(loader_val)
+        val_loss_total /= len(loader_val)
+        scheduler.step(torch.tensor([val_loss_total]))
+        validation_losses_tag[epoch] = val_loss_tag
+        validation_losses_reg[epoch] = val_loss_reg
+        validation_losses_total[epoch] = val_loss_total
+        print("v_tag: "+ str(val_loss_tag))
+        print("v_reg: "+ str(val_loss_reg))
+        print("v_total: "+ str(val_loss_total))
 
         # save the model
         model.eval()
@@ -143,8 +160,12 @@ def main():
 
     # plot loss/epoch for training and validation sets
     print("Making validation plots")
-    training = plt.plot(training_losses, label='training')
-    validation = plt.plot(validation_losses, label='validation')
+    training_tag = plt.plot(training_losses_tag, label='training_tag')
+    validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
+    training_reg = plt.plot(training_losses_reg, label='training_reg')
+    validation_reg = plt.plot(validation_losses_reg, label='validation_reg')
+    training_total = plt.plot(training_losses_total, label='training_total')
+    validation_total = plt.plot(validation_losses_total, label='validation_total')
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
 

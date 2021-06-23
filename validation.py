@@ -28,24 +28,24 @@ def getNNOutput(dataset, model):
     weight = w.squeeze(1).float().numpy()
     model.eval()
     out, _ = model(data)
+    input = data.squeeze(1).numpy()
     output = f.softmax(out,dim=1)[:,1].detach().numpy()
-    return labels, output, pT, mT, weight
+    return labels, input, output, pT, mT, weight
 
-def getROCStuff(label, output):
-    fpr, tpr, thresholds = roc_curve(label, output)
+def getROCStuff(label, output, weights=None):
+    fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
     auc = roc_auc_score(label, output)
     return fpr, tpr, auc
 
-def getSgBgOutputs(label, output):
-    y_Sg = []
-    y_Bg = []
-    for lt in range(len(label)):
-        lbl = label[lt]
-        if lbl == 1:
-            y_Sg.append(output[lt])
-        else:
-            y_Bg.append(output[lt])
-    return y_Sg, y_Bg
+def getSgBgOutputs(label, output, weights):
+    sigCond = label==1
+    bkgCond = np.logical_not(sigCond)
+    y_Sg = output[sigCond]
+    y_Bg = output[bkgCond]
+    w_Sg = weights[sigCond]
+    w_Bg = weights[bkgCond]
+
+    return y_Sg, y_Bg, w_Sg, w_Bg
 
 def histplot(data,bins,color,label,weights=None,alpha=1.0,hatch=None,points=False,facecolorOn=True):
     data,bins = np.histogram(data, bins=bins, weights=weights, density=True)
@@ -64,18 +64,21 @@ def histplot(data,bins,color,label,weights=None,alpha=1.0,hatch=None,points=Fals
             facecolor="none"
         plt.fill_between(pbins,pdata, step="post", edgecolor=color, facecolor=facecolor, label=label, alpha=alpha, hatch=hatch)
 
-def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName):
+def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,weights=None):
     binWidth = binVarBins[1] - binVarBins[0]
     fig, ax = plt.subplots(figsize=(12, 8))
     for j in range(len(binVarBins)):
         binVal = binVarBins[j]
         if j < len(binVarBins)-1:
-            histVL = histVar[np.absolute(binVal-binVar) < binWidth/2.]
+            cond = np.absolute(binVal-binVar) < binWidth/2.
             lab = '{:.2f} < {} < {:.2f}'.format(binVarBins[j]-binWidth/2.,varLab,binVarBins[j]+binWidth/2)
         else:
-            histVL = histVar[binVar > binVal - binWidth/2. ]
+            cond = binVar > binVal - binWidth/2.
             lab = '{} > {:.2f}'.format(varLab,binVarBins[j]-binWidth/2.)
-        histplot(histVL,bins=50,color=mplColors[j],alpha=0.5,label=lab)
+        wVL = weights[cond]
+        histVL = histVar[cond]
+        if len(histVL) > 0:
+            histplot(histVL,bins=50,weights=wVL,color=mplColors[j],alpha=0.5,label=lab)
     ax.set_ylabel('Norm Events')
     ax.set_xlabel(xlabel)
     plt.yscale("log")
@@ -113,22 +116,20 @@ def main():
     dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, uniform=uniform, mT=mT, weight=weight)
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0)
-    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
-    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
-    df = dataset.dataFrame
-    # # Build model
+    # Build model
     model = DNN_GRF(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
     print("Loading model from file " + args.model)
     model.load_state_dict(torch.load(args.model))
     model.eval()
     model.to('cpu')
-    label_train, output_train, pT_train, mT_train, w_train = getNNOutput(train, model)
-    label_test, output_test, pT_test, mT_test, w_test = getNNOutput(test, model)
-    fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train)
-    fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test)
+    label_train, input_train, output_train, pT_train, mT_train, w_train = getNNOutput(train, model)
+    label_test, input_test, output_test, pT_test, mT_test, w_test = getNNOutput(test, model)
+    fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train, w_train)
+    fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test, w_test)
+    # Creating a pandas dataFrame for training data
+    df = pd.DataFrame(data=input_train,columns=varSet)
 
-    # plot correlation
+    # # plot correlation
     fig, ax = plt.subplots(figsize=(12, 8))
     corr = np.round(df.corr(),2)
     ax = sns.heatmap(corr,cmap="Spectral",annot=True)
@@ -138,15 +139,15 @@ def main():
     ax.set_xlim(left - 0.5, right + 0.5)
     plt.savefig(args.outf + "/corrHeatMap.pdf", dpi=fig.dpi)
     fig, ax = plt.subplots(figsize=(12, 8))
-
-    # plot input variable
-    print(varSet)
-    df["label"] = np.array(dataset.signal)[:,0]
-    print(df[:10])
-    # weights = np.array(df["procweight"]*df["puweight"])
+    #
+    # # plot input variable
+    df["label"] = label_train
+    df["weights"] = w_train
+    sigCond = (label_train == 1)
+    bkgCond = np.logical_not(sigCond)
     for var in varSet:
-        dataSig = df[var][df["label"] == 1]
-        dataBkg = df[var][df["label"] == 0]
+        dataSig = df[var][sigCond]
+        dataBkg = df[var][bkgCond]
         fig, ax = plt.subplots(figsize=(12, 8))
         histplot(dataSig,bins=50,color='xkcd:blue',alpha=0.5,label='Background')
         histplot(dataBkg,bins=50,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
@@ -166,13 +167,11 @@ def main():
     plt.legend(loc='best')
     fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi)
     plt.close(fig)
-
-    # plot eff vs pT
+    #
+    # # plot eff vs pT
     binWidth = 500
     wpt = 0.5 # NN working point
     pTX = np.arange(250,3000,binWidth)
-    totSigJet = len(label_train[label_train==1])
-    totBkgJet = len(label_train) - totSigJet
     eff = []
     for j in range(len(pTX)):
         binVal = pTX[j]
@@ -182,40 +181,48 @@ def main():
             pTCond = pT_train > binVal - binWidth/2.
         output_pTC = output_train[pTCond]
         label_pTC = label_train[pTCond]
+        weights_pTC = w_train[pTCond]
         output_pTC_wpt = np.where(output_pTC>wpt,1,0)
-        match_output_label = np.where(label_pTC == output_pTC,1.0,0.0)
-        eff.append(np.sum(match_output_label)/totSigJet)
+        match_output_label = np.where(np.logical_and(label_pTC == output_pTC_wpt,output_pTC_wpt==1),1.0,0.0)
+        weighted_num = np.sum(np.multiply(match_output_label,weights_pTC))
+        weighted_den = np.sum(np.multiply(label_pTC,weights_pTC))
+        eff.append(weighted_num/weighted_den)
     fig, ax = plt.subplots(figsize=(12, 8))
     plt.plot(pTX,eff)
+    plt.grid()
     ax.set_ylabel('Efficiency')
     ax.set_xlabel('pT (GeV)')
     plt.savefig(args.outf + "/effVspT.pdf", dpi=fig.dpi)
-
-    # # histogram NN score
+    #
+    # # # histogram NN score
     fig, ax = plt.subplots(figsize=(12, 8))
-    histplot(output_train,bins=50,color='xkcd:blue',alpha=0.5,label='Training set')
+    histplot(output_train,bins=50,weights=w_train,color='xkcd:blue',alpha=0.5,label='Training set')
     ax.set_ylabel('Norm Events')
     ax.set_xlabel("NN Score")
     plt.legend()
     plt.savefig(args.outf + "/SNN.pdf", dpi=fig.dpi)
-
+    #
     # NN score per pT bin
-    plotByBin(binVar=pT_train,binVarBins = np.arange(250,3000,500),histVar=output_train,xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT")
+    plotByBin(binVar=pT_train,binVarBins = np.arange(250,3000,500),histVar=output_train,xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT",weights=w_train)
     # pT per NN score bin
-    plotByBin(binVar=output_train,binVarBins = np.arange(0,1,0.1),histVar=pT_train,xlabel="$Jet p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN")
+    plotByBin(binVar=output_train,binVarBins = np.arange(0,1,0.1),histVar=pT_train,xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN",weights=w_train)
+    # NN score per mT bin
+    plotByBin(binVar=mT_train,binVarBins = np.arange(250,3000,500),histVar=output_train,xlabel="NN Score",varLab="mT",outDir=args.outf,plotName="SNNpermT",weights=w_train)
+    # mT per NN score bin
+    plotByBin(binVar=output_train,binVarBins = np.arange(0,1,0.1),histVar=mT_train,xlabel="Jet $m_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="mTperSNN",weights=w_train)
 
-    # plot discriminator
+    # # plot discriminator
     bins = np.linspace(0, 1, 100)
     fig, ax = plt.subplots(figsize=(6, 6))
-    y_Train_Sg, y_Train_Bg = getSgBgOutputs(label_train, output_train)
-    y_test_Sg, y_test_Bg = getSgBgOutputs(label_test, output_test)
+    y_Train_Sg, y_Train_Bg, w_Train_Sg, w_Train_Bg = getSgBgOutputs(label_train, output_train,w_train)
+    y_test_Sg, y_test_Bg, w_test_Sg, w_test_Bg = getSgBgOutputs(label_test, output_test,w_test)
     ax.set_title('')
     ax.set_ylabel('Norm Events')
     ax.set_xlabel('Discriminator')
-    histplot(y_test_Sg,bins,color='xkcd:red',alpha=1.0,label='Sg Test',hatch="//",facecolorOn=False)
-    histplot(y_test_Bg,bins,color='xkcd:blue',alpha=0.5,label='Bg Test')
-    histplot(y_Train_Sg, bins, color='xkcd:red',label='Sg Train',points=True)
-    histplot(y_Train_Bg, bins, color='xkcd:blue',label='Bg Train',points=True)
+    histplot(y_test_Sg,bins,weights=w_test_Sg,color='xkcd:red',alpha=1.0,label='Sg Test',hatch="//",facecolorOn=False)
+    histplot(y_test_Bg,bins,weights=w_test_Bg,color='xkcd:blue',alpha=0.5,label='Bg Test')
+    histplot(y_Train_Sg,bins,weights=w_Train_Sg,color='xkcd:red',label='Sg Train',points=True)
+    histplot(y_Train_Bg,bins,weights=w_Train_Bg,color='xkcd:blue',label='Bg Train',points=True)
     ax.legend(loc='best', frameon=False)
     fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi)
 
