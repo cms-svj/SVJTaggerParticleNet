@@ -28,11 +28,11 @@ def init_weights(m):
 def processBatch(args, data, model, criterions, lambdas):
     label, d, pt, mT, w = data
     l1, l2, lgr = lambdas
-    output, output_reg = model(d.float().to(args.device), lgr)
+    output, output_reg = model(d.float().to(args.device), lgr.to(args.device))
     criterion, criterion_reg = criterions
     batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
     batch_loss_reg = criterion_reg(output_reg.to(args.device), pt.to(args.device)).to(args.device)
-    return l1*batch_loss,l2*lgr*batch_loss_reg
+    return l1*batch_loss,l2*batch_loss_reg
 
 def main():
     # parse arguments
@@ -166,6 +166,8 @@ def main():
     validation_reg = plt.plot(validation_losses_reg, label='validation_reg')
     training_total = plt.plot(training_losses_total, label='training_total')
     validation_total = plt.plot(validation_losses_total, label='validation_total')
+    plt.xlabel("epoch")
+    plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
 
