@@ -23,15 +23,20 @@ def getNNOutput(dataset, model):
     l, d, p, m, w = next(iter(loader))
     labels = l.squeeze(1).numpy()
     data = d.float()
+    # print(p)
     pT = p.squeeze(1).float().numpy()
     mT = m.squeeze(1).float().numpy()
     weight = w.squeeze(1).float().numpy()
     model.eval()
-    out_tag, out_reg = model(data)
+    out_tag, out_pTClass = model(data)
     input = data.squeeze(1).numpy()
-    output_reg = out_reg[:,0].detach().numpy()
+    # output_pTClass = out_pTClass[:,0].detach().numpy()
+    output_pTClass = f.softmax(out_pTClass,dim=1).detach().numpy()
     output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
-    return labels, input, output_tag, output_reg, pT, mT, weight
+    # print(output_pTClass)
+    # print(output_tag)
+    # raise ValueError('Trying to stop the code here.')
+    return labels, input, output_tag, output_pTClass, pT, mT, weight
 
 def getROCStuff(label, output, weights=None):
     fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
@@ -88,6 +93,11 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,weights=No
     plt.savefig(outDir + "/{}.pdf".format(plotName), dpi=fig.dpi)
 
 def main():
+    # m = nn.Softmax(dim=1)
+    # input = torch.randn(10, 21)
+    # print(input)
+    # output = m(input)
+    # print(output)
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
@@ -95,8 +105,6 @@ def main():
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
-    parser.write_config(args, args.outf + "/config_out.py")
-
     # Choose cpu or gpu
     args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', args.device)
@@ -105,56 +113,62 @@ def main():
         print("Using GPU named: \"{}\"".format(torch.cuda.get_device_name(gpuIndex)))
 
     # Load dataset
-    print('Loading dataset ...')
+    print('Loading dataset...')
     dSet = args.dataset
     sigFiles = dSet.signal
     inputFiles = dSet.background
     hyper = args.hyper
     inputFiles.update(sigFiles)
     varSet = args.features.train
+    pTBins = dSet.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
-    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, uniform=uniform, mT=mT, weight=weight)
+    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight)
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     # Build model
-    model = DNN_GRF(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
+    model = DNN_GRF(n_var=len(varSet), n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=dSet.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
     print("Loading model from file " + args.model)
     model.load_state_dict(torch.load(args.model))
     model.eval()
     model.to('cpu')
-    label_train, input_train, output_train_tag, output_train_reg, pT_train, mT_train, w_train = getNNOutput(train, model)
-    label_test, input_test, output_test_tag, output_test_reg, pT_test, mT_test, w_test = getNNOutput(test, model)
+    label_train, input_train, output_train_tag, output_train_pTClass, pT_train, mT_train, w_train = getNNOutput(train, model)
+    label_test, input_test, output_test_tag, output_test_pTClass, pT_test, mT_test, w_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
     # Creating a pandas dataFrame for training data
     df = pd.DataFrame(data=input_train,columns=varSet)
 
     # # testing pT prediction with GR turned off
-    predictedpT = output_train_reg
+    predictedpT = np.argmax(output_train_pTClass,axis=1)
     truepT = pT_train
+    print("predictedpT",predictedpT)
+    print("truepT",truepT)
     fig = plt.figure(figsize=(12, 8))
     gs = fig.add_gridspec(2, hspace=0,height_ratios=[5,1])
     axs = gs.subplots(sharex=True)
-    binwidth = 50
-    bins = np.arange(0,3100,binwidth)
-    truepT_bins,truepT_hist = histplot(truepT,bins,"xkcd:blue","True pT",weights=w_train,alpha=1.0,hatch="//",facecolorOn=False,norm=False,ax=axs[0])
-    prepT_bins,prepT_hist = histplot(predictedpT,bins,"xkcd:red","Predicted pT",weights=w_train,points=True,norm=False,ax=axs[0])
+    binwidth = 1
+    bins = np.arange(0,len(pTBins),binwidth)-0.5*binwidth
+    truepT_bins,truepT_hist = histplot(truepT,bins,"xkcd:blue","True pT",alpha=1.0,hatch="//",facecolorOn=False,norm=False,ax=axs[0])
+    prepT_bins,prepT_hist = histplot(predictedpT,bins,"xkcd:red","Predicted pT",points=True,norm=False,ax=axs[0])
     axs[1].plot(bins[:-1]+binwidth,np.divide(prepT_hist,truepT_hist)[:-1],marker=".")
     axs[1].set_ylim(0,2)
+    axs[1].set_xlim(0,len(pTBins)-1)
     axs[1].set_yticks(np.arange(0,2,0.5))
-    axs[1].set_xticks(np.arange(0,3100,200))
+    axs[0].set_yscale("log")
     axs[0].grid()
     axs[1].grid()
     axs[0].legend()
-    plt.ylabel('Norm Events')
+    axs[0].set_ylabel('Norm Events')
     plt.xlabel('pT (GeV)')
+    plt.xticks(ticks=bins[:-1]+binwidth*0.5,labels=[str(p) for p in pTBins[:-1]])
     # Hide x labels and tick labels for all but bottom plot.
     for ax in axs:
         ax.label_outer()
     plt.savefig(args.outf + "/predictedpTvstruepT.pdf", dpi=fig.dpi)
     print("Finished making pT prediction plot")
+    raise ValueError('Trying to stop the code here.')
 
     # plot correlation
     fig, ax = plt.subplots(figsize=(12, 8))
