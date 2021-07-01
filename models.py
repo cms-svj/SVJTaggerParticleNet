@@ -26,39 +26,46 @@ class DNN(nn.Module):
         return self.dnn(x)
 
 class DNN_GRF(nn.Module):
-    def __init__(self, n_var=10, n_layers=1, n_nodes=100, n_outputs=2, drop_out_p=0.3):
+    def __init__(self, n_var=10, n_layers_features=1, n_layers_tag=1, n_layers_pT=1, n_nodes=100, n_outputs=2, n_pTBins=10, drop_out_p=0.3):
         super(DNN_GRF, self).__init__()
 
         # Input and feature layers
         self.feature = nn.Sequential()
         self.feature.add_module('i_linear1', nn.Linear(n_var, n_nodes))
         self.feature.add_module('i_relu1',   nn.ReLU())
-        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+        for i, n in enumerate(list(n_nodes for x in range(n_layers_features))):
             self.feature.add_module('f_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
             self.feature.add_module('f_relu{}'.format(i+1),   nn.ReLU())
 
-        # Jet tagger classifer
+        # Jet tagger classifier
         self.tagger = nn.Sequential()
-        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+        for i, n in enumerate(list(n_nodes for x in range(n_layers_tag))):
             self.tagger.add_module('t_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
             self.tagger.add_module('t_relu{}'.format(i+1),   nn.ReLU())
         self.tagger.add_module('t_dropout',   nn.Dropout(p=drop_out_p))
         self.tagger.add_module('t_linearOut', nn.Linear(n_nodes, n_outputs))
 
-        # Jet pT regression
-        self.regression = nn.Sequential()
-        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
-            self.regression.add_module('r_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
-            self.regression.add_module('r_relu{}'.format(i+1),   nn.ReLU())
-        self.regression.add_module('r_dropout',   nn.Dropout(p=drop_out_p))
-        self.regression.add_module('r_linearOut', nn.Linear(n_nodes, 1))
+        # Jet pT classifier
+        self.pTClass = nn.Sequential()
+        for i, n in enumerate(list(n_nodes for x in range(n_layers_pT))):
+            self.pTClass.add_module('p_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
+            self.pTClass.add_module('p_relu{}'.format(i+1),   nn.ReLU())
+        self.pTClass.add_module('p_dropout',   nn.Dropout(p=drop_out_p))
+        self.pTClass.add_module('p_linearOut', nn.Linear(n_nodes, n_pTBins))
 
+    # def forward(self, input_data, lambdaGR=1.0):
+    #     feature = self.feature(input_data)
+    #     tagger_output = self.tagger(feature)
+    #     reverse_feature = GradientReversalFunction.apply(feature, lambdaGR)
+    #     pTClass_output = self.pTClass(reverse_feature)
+    #     return tagger_output, pTClass_output
+
+    # turn off gradient reversal
     def forward(self, input_data, lambdaGR=1.0):
         feature = self.feature(input_data)
         tagger_output = self.tagger(feature)
-        reverse_feature = GradientReversalFunction.apply(feature, lambdaGR)
-        regression_output = self.regression(reverse_feature)
-        return tagger_output, regression_output
+        pTClass_output = self.pTClass(feature)
+        return tagger_output, pTClass_output
 
 if __name__=="__main__":
     # Test CrossEntropyLoss function
@@ -70,7 +77,7 @@ if __name__=="__main__":
     target = torch.empty(5, dtype=torch.long).random_(2)
     output = loss(input, target)
     output.backward()
-    
+
     # Test DNN model
     # input is 5 events with 10 input variables
     # out is the non-softmax output of the model
@@ -95,4 +102,3 @@ if __name__=="__main__":
     summary(dnn_grf, [(1,10), (1,1)])
     out, reg = dnn_grf(input_data=input, lambdaGR=1.0)
     print(out, reg)
-

@@ -11,10 +11,10 @@ def getBranch(f,tree,variable,branches,branchList):
     branch = branch.head(len(branches))
     branchList.append(branch)
 
-def get_all_vars(inputFolder, samples, variables, uniform, mT, weight, tree="tree"):
+def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, tree="tree"):
     dSets = []
     signal = []
-    pTs = []
+    pTLab = np.array([])
     mTs = []
     weights = []
     for key,fileList in samples.items():
@@ -24,18 +24,21 @@ def get_all_vars(inputFolder, samples, variables, uniform, mT, weight, tree="tre
             #branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
             #branches = branches.head(5000)
             dSets.append(branches)
-            getBranch(f,tree,uniform,branches,pTs)
             getBranch(f,tree,mT,branches,mTs)
             getBranch(f,tree,weight,branches,weights)
+            # get the pT label based on what pT bin the jet pT falls into
+            branch = f[tree].pandas.df(uniform)
+            branch = branch.head(len(branches)).to_numpy().flatten()
+            pTLabel = np.digitize(branch,pTBins) - 1.0
+            pTLab = np.append(pTLab,pTLabel)
             if key == "signal":
                 signal += list([0, 1] for _ in range(len(branches)))
             else:
                 signal += list([1, 0] for _ in range(len(branches)))
     dataSet = pd.concat(dSets)
-    pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
-    return [dataSet,signal,pT,mT,weight]
+    return [dataSet,signal,pTLab,mT,weight]
 
 def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     if sum(frac) != 1.0: raise ValueError("Sum of fractions does not equal 1.0")
@@ -46,8 +49,8 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     return [train_size, test_size, val_size]
 
 class RootDataset(udata.Dataset):
-    def __init__(self, inputFolder, root_file, variables, uniform, mT, weight):
-        dataSet, signal, pT, mTs, weights = get_all_vars(inputFolder, root_file, variables, uniform, mT, weight)
+    def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight):
+        dataSet, signal, pTLab, mTs, weights = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
         print(type(dataSet))
         self.root_file = root_file
         self.variables = variables
@@ -55,7 +58,7 @@ class RootDataset(udata.Dataset):
         self.weight = weight
         self.vars = dataSet.astype(float).values
         self.signal = signal
-        self.pT = pT.astype(float).values
+        self.pTLab = pTLab
         self.mTs = mTs.astype(float).values
         self.weights = weights.astype(float).values
         print("Number of events:", len(self.signal))
@@ -69,7 +72,7 @@ class RootDataset(udata.Dataset):
     def __getitem__(self, idx):
         data_np = self.vars[idx].copy()
         label_np = np.zeros(1, dtype=np.long).copy()
-        pT_np = self.pT[idx].copy()
+        pTLab_np = np.array([np.long(self.pTLab[idx])]).copy()
         mTs_np = self.mTs[idx].copy()
         weights_np = self.weights[idx].copy()
 
@@ -78,10 +81,10 @@ class RootDataset(udata.Dataset):
 
         data  = torch.from_numpy(data_np)
         label = torch.from_numpy(label_np)
-        pT = torch.from_numpy(pT_np).float()
+        pTLab = torch.from_numpy(pTLab_np)
         mTs = torch.from_numpy(mTs_np).float()
         weights = torch.from_numpy(weights_np).float()
-        return label, data, pT, mTs, weights
+        return label, data, pTLab, mTs, weights
 
 if __name__=="__main__":
     # parse arguments
@@ -96,21 +99,26 @@ if __name__=="__main__":
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
+    pTBins = dSet.pTBins
+    print(pTBins)
     uniform = args.features.uniform
     mTs = args.features.mT
     weights = args.features.weight
-    dataset = RootDataset(dSet.path, inputFiles, varSet, uniform, mTs, weights)
-    sizes = get_sizes(len(dataset), [0.8, 0.1, 0.1])
+    dataset = RootDataset(dSet.path, inputFiles, varSet, pTBins, uniform, mTs, weights)
+    sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
     l, d, p, m, w = next(iter(loader))
+    print(l)
     labels = l.squeeze(1).numpy()
+    print(labels)
+    print(p)
+    pTLab = p.squeeze(1).numpy()
     data = d.float().numpy()
-    pT = p.squeeze(1).float().numpy()
     mTs = m.squeeze(1).float().numpy()
     weights = w.squeeze(1).float().numpy()
     print(labels)
     print(data)
-    print(pT)
+    print(pTLab)
     print(mTs)
     print(weights)
