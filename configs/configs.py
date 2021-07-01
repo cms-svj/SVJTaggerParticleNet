@@ -5,10 +5,10 @@ def make_schema(config_schema_dict):
 
 # define schema of config parameters
 config_schema_dict = {
-    "dataset":  ["path","signal","background","sample_fractions","pTBins","n_pTBins"],
+    "dataset":  ["path","signal","background","sample_fractions"],
     "features": ["uniform","weight","mT","train","spectator"],
     "training": ["size","signal_id_method","signal_weight_method","weights","algorithms"],
-    "hyper":    ["max_depth","n_estimators","subsample","learning_rate","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss","batchSize","num_of_layers_tag","num_of_layers_pT","num_of_nodes","dropout","epochs","lambdaTag","lambdaReg","lambdaGR"],
+    "hyper":    ["max_depth","n_estimators","subsample","learning_rate","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss","batchSize","num_of_layers_features","num_of_layers_tag","num_of_layers_pT","num_of_nodes","dropout","epochs","lambdaTag","lambdaReg","lambdaGR","pTBins","n_pTBins"],
 }
 config_schema = make_schema(config_schema_dict)
 

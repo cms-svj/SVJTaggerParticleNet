@@ -1,5 +1,4 @@
 from magiconfig import MagiConfig
-import numpy as np
 
 config = MagiConfig(dataset=MagiConfig(), features=MagiConfig(), training=MagiConfig(), hyper=MagiConfig())
 config.dataset.path = "root://cmseos.fnal.gov//store/user/lpcsusyhad/SVJ2017/Run2ProductionV17/Skims/tree_dijetmtdetahadloosemf-train-flatsig/"
@@ -30,20 +29,20 @@ config.dataset.background =  {"background": [
     "tree_TTJets_HT2500toInf_MC2017",
 ]}
 config.dataset.sample_fractions = [0.70, 0.15, 0.15]
-pTBins = np.arange(0,5100,500)
-config.dataset.pTBins = pTBins
-config.dataset.n_pTBins = pTBins.size
 config.features.uniform = "pt"
 config.features.weight = "procweight"
 config.features.mT = "mt"
 config.features.train = ["girth","tau21","tau32","msd","deltaphi","axisminor","axismajor","ptD","ecfN2b1","ecfN3b1","fChHad","fEle","fMu","fNeuHad","fPho","pt"]
 config.hyper.learning_rate = 0.01
 config.hyper.batchSize = 5000
+config.hyper.num_of_layers_features = 1
 config.hyper.num_of_layers_tag = 3
 config.hyper.num_of_layers_pT = 3
-config.hyper.num_of_nodes = 50
+config.hyper.num_of_nodes = 40
 config.hyper.dropout = 0.3
-config.hyper.epochs = 10
+config.hyper.epochs = 15
 config.hyper.lambdaTag = 1.0
 config.hyper.lambdaReg = 1.0 # lambdaReg = 0.000001, lambdaGR = 1.0, give the same order of magnitude loss as loss_tag
 config.hyper.lambdaGR = 1.0 # try 1.0. 10.0, 100.0     1.0,2.0,3.0   2.1,2.2
+config.hyper.pTBins = range(0,5100,500)
+config.hyper.n_pTBins = len(config.hyper.pTBins)

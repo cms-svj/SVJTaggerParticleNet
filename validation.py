@@ -93,11 +93,6 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,weights=No
     plt.savefig(outDir + "/{}.pdf".format(plotName), dpi=fig.dpi)
 
 def main():
-    # m = nn.Softmax(dim=1)
-    # input = torch.randn(10, 21)
-    # print(input)
-    # output = m(input)
-    # print(output)
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
@@ -120,7 +115,7 @@ def main():
     hyper = args.hyper
     inputFiles.update(sigFiles)
     varSet = args.features.train
-    pTBins = dSet.pTBins
+    pTBins = hyper.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
@@ -128,7 +123,7 @@ def main():
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     # Build model
-    model = DNN_GRF(n_var=len(varSet), n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=dSet.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
+    model = DNN_GRF(n_var=len(varSet),  n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
     print("Loading model from file " + args.model)
     model.load_state_dict(torch.load(args.model))
     model.eval()
@@ -168,7 +163,7 @@ def main():
         ax.label_outer()
     plt.savefig(args.outf + "/predictedpTvstruepT.pdf", dpi=fig.dpi)
     print("Finished making pT prediction plot")
-    raise ValueError('Trying to stop the code here.')
+    # raise ValueError('Trying to stop the code here.')
 
     # plot correlation
     fig, ax = plt.subplots(figsize=(12, 8))

@@ -64,7 +64,7 @@ def main():
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    pTBins = dSet.pTBins
+    pTBins = hyper.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
@@ -77,8 +77,8 @@ def main():
 
     # Build model
     #model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
-    print("Number of pT classes: {}".format(dSet.n_pTBins))
-    model = DNN_GRF(n_var=len(varSet), n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=dSet.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
+    print("Number of pT classes: {}".format(hyper.n_pTBins))
+    model = DNN_GRF(n_var=len(varSet), n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
     if (args.model == None):
         model.apply(init_weights)
         print("Creating new model ")

@@ -26,14 +26,14 @@ class DNN(nn.Module):
         return self.dnn(x)
 
 class DNN_GRF(nn.Module):
-    def __init__(self, n_var=10, n_layers=1, n_layers_tag=1, n_layers_pT=1, n_nodes=100, n_outputs=2, n_pTBins=10, drop_out_p=0.3):
+    def __init__(self, n_var=10, n_layers_features=1, n_layers_tag=1, n_layers_pT=1, n_nodes=100, n_outputs=2, n_pTBins=10, drop_out_p=0.3):
         super(DNN_GRF, self).__init__()
 
         # Input and feature layers
         self.feature = nn.Sequential()
         self.feature.add_module('i_linear1', nn.Linear(n_var, n_nodes))
         self.feature.add_module('i_relu1',   nn.ReLU())
-        for i, n in enumerate(list(n_nodes for x in range(n_layers))):
+        for i, n in enumerate(list(n_nodes for x in range(n_layers_features))):
             self.feature.add_module('f_linear{}'.format(i+1), nn.Linear(n_nodes, n_nodes))
             self.feature.add_module('f_relu{}'.format(i+1),   nn.ReLU())
 
