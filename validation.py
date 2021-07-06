@@ -20,10 +20,11 @@ mplColors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '
 
 def getNNOutput(dataset, model):
     loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
-    l, d, p, m, w = next(iter(loader))
+    l, d, pl, p, m, w = next(iter(loader))
     labels = l.squeeze(1).numpy()
     data = d.float()
     # print(p)
+    pTL = pl.squeeze(1).float().numpy()
     pT = p.squeeze(1).float().numpy()
     mT = m.squeeze(1).float().numpy()
     weight = w.squeeze(1).float().numpy()
@@ -36,7 +37,7 @@ def getNNOutput(dataset, model):
     # print(output_pTClass)
     # print(output_tag)
     # raise ValueError('Trying to stop the code here.')
-    return labels, input, output_tag, output_pTClass, pT, mT, weight
+    return labels, input, output_tag, output_pTClass, pTL, pT, mT, weight
 
 def getROCStuff(label, output, weights=None):
     fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
@@ -128,8 +129,8 @@ def main():
     model.load_state_dict(torch.load(args.model))
     model.eval()
     model.to('cpu')
-    label_train, input_train, output_train_tag, output_train_pTClass, pT_train, mT_train, w_train = getNNOutput(train, model)
-    label_test, input_test, output_test_tag, output_test_pTClass, pT_test, mT_test, w_test = getNNOutput(test, model)
+    label_train, input_train, output_train_tag, output_train_pTClass, pTLab_train, pT_train, mT_train, w_train = getNNOutput(train, model)
+    label_test, input_test, output_test_tag, output_test_pTClass, pTLab_test, pT_test, mT_test, w_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
     # Creating a pandas dataFrame for training data
@@ -137,7 +138,7 @@ def main():
 
     # # testing pT prediction with GR turned off
     predictedpT = np.argmax(output_train_pTClass,axis=1)
-    truepT = pT_train
+    truepT = pTLab_train
     print("predictedpT",predictedpT)
     print("truepT",truepT)
     fig = plt.figure(figsize=(12, 8))

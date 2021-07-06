@@ -15,6 +15,7 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     dSets = []
     signal = []
     pTLab = np.array([])
+    pTs = []
     mTs = []
     weights = []
     for key,fileList in samples.items():
@@ -24,6 +25,7 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             #branches = branches.head(22690) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
             #branches = branches.head(5000)
             dSets.append(branches)
+            getBranch(f,tree,uniform,branches,pTs)
             getBranch(f,tree,mT,branches,mTs)
             getBranch(f,tree,weight,branches,weights)
             # get the pT label based on what pT bin the jet pT falls into
@@ -36,9 +38,10 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             else:
                 signal += list([1, 0] for _ in range(len(branches)))
     dataSet = pd.concat(dSets)
+    pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
-    return [dataSet,signal,pTLab,mT,weight]
+    return [dataSet,signal,pTLab,pT,mT,weight]
 
 def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     if sum(frac) != 1.0: raise ValueError("Sum of fractions does not equal 1.0")
@@ -50,7 +53,7 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
 
 class RootDataset(udata.Dataset):
     def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight):
-        dataSet, signal, pTLab, mTs, weights = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
+        dataSet, signal, pTLab, pTs, mTs, weights = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
         print(type(dataSet))
         self.root_file = root_file
         self.variables = variables
@@ -59,6 +62,7 @@ class RootDataset(udata.Dataset):
         self.vars = dataSet.astype(float).values
         self.signal = signal
         self.pTLab = pTLab
+        self.pTs = pTs.astype(float).values
         self.mTs = mTs.astype(float).values
         self.weights = weights.astype(float).values
         print("Number of events:", len(self.signal))
@@ -73,6 +77,7 @@ class RootDataset(udata.Dataset):
         data_np = self.vars[idx].copy()
         label_np = np.zeros(1, dtype=np.long).copy()
         pTLab_np = np.array([np.long(self.pTLab[idx])]).copy()
+        pTs_np = self.pTs[idx].copy()
         mTs_np = self.mTs[idx].copy()
         weights_np = self.weights[idx].copy()
 
@@ -82,9 +87,10 @@ class RootDataset(udata.Dataset):
         data  = torch.from_numpy(data_np)
         label = torch.from_numpy(label_np)
         pTLab = torch.from_numpy(pTLab_np)
+        pTs = torch.from_numpy(pTs_np).float()
         mTs = torch.from_numpy(mTs_np).float()
         weights = torch.from_numpy(weights_np).float()
-        return label, data, pTLab, mTs, weights
+        return label, data, pTLab, pTs, mTs, weights
 
 if __name__=="__main__":
     # parse arguments
@@ -99,7 +105,7 @@ if __name__=="__main__":
     print(inputFiles)
     varSet = args.features.train
     print(varSet)
-    pTBins = dSet.pTBins
+    pTBins = args.hyper.pTBins
     print(pTBins)
     uniform = args.features.uniform
     mTs = args.features.mT
@@ -108,17 +114,16 @@ if __name__=="__main__":
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
-    l, d, p, m, w = next(iter(loader))
-    print(l)
+    l, d, pl, p, m, w = next(iter(loader))
     labels = l.squeeze(1).numpy()
-    print(labels)
-    print(p)
-    pTLab = p.squeeze(1).numpy()
+    pTLab = pl.squeeze(1).numpy()
     data = d.float().numpy()
+    pTs = p.squeeze(1).float().numpy()
     mTs = m.squeeze(1).float().numpy()
     weights = w.squeeze(1).float().numpy()
     print(labels)
     print(data)
     print(pTLab)
     print(mTs)
+    print(pTs)
     print(weights)

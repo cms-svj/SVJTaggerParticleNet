@@ -26,7 +26,7 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 def processBatch(args, data, model, criterions, lambdas):
-    label, d, pTLab, mT, w = data
+    label, d, pTLab, pT, mT, w = data
     l1, l2, lgr = lambdas
     output, output_pTClass = model(d.float().to(args.device), lgr)
     criterion, criterion_pTClass = criterions
@@ -42,6 +42,8 @@ def main():
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
+    if not os.path.isdir(args.outf):
+        os.mkdir(args.outf)
     parser.write_config(args, args.outf + "/config_out.py")
 
     # Choose cpu or gpu
