@@ -80,7 +80,7 @@ def main():
     print("Number of pT classes: {}".format(hyper.n_pTBins))
     model = DNN_GRF(n_var=len(varSet), n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
     if (args.model == None):
-        model.apply(init_weights)
+        #model.apply(init_weights)
         print("Creating new model ")
     else:
         print("Loading model from file " + args.model)
@@ -95,7 +95,7 @@ def main():
 
     #Optimizer
     optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer=optimizer, factor=0.1, patience=10, verbose=True)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95, last_epoch=-1, verbose=True)
 
     # training and validation
     writer = SummaryWriter()
@@ -147,7 +147,8 @@ def main():
         val_loss_tag /= len(loader_val)
         val_loss_pTClass /= len(loader_val)
         val_loss_total /= len(loader_val)
-        scheduler.step(torch.tensor([val_loss_total]))
+        scheduler.step()
+        #scheduler.step(torch.tensor([val_loss_total]))
         validation_losses_tag[epoch] = val_loss_tag
         validation_losses_pTClass[epoch] = val_loss_pTClass
         validation_losses_total[epoch] = val_loss_total
