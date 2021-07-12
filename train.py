@@ -45,7 +45,6 @@ def main():
     if not os.path.isdir(args.outf):
         os.mkdir(args.outf)
     parser.write_config(args, args.outf + "/config_out.py")
-
     # Choose cpu or gpu
     args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', args.device)
@@ -55,7 +54,7 @@ def main():
         #print('Memory Usage:')
         #print('\tAllocated:', round(torch.cuda.memory_allocated(gpuIndex)/1024**3,1), 'GB')
         #print('\tCached:   ', round(torch.cuda.memory_reserved(gpuIndex)/1024**3,1), 'GB')
-
+    torch.manual_seed(args.hyper.rseed)
     # Load dataset
     print('Loading dataset ...')
     dSet = args.dataset
