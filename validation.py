@@ -54,14 +54,16 @@ def getSgBgOutputs(label, output, weights):
 
     return y_Sg, y_Bg, w_Sg, w_Bg
 
-def histplot(data,bins,color,label,weights=None,alpha=1.0,hatch=None,points=False,facecolorOn=True,norm=True,ax=plt):
+def histMake(data,bins,weights=None,norm=True):
     data,bins = np.histogram(data, bins=bins, weights=weights, density=norm)
     bins = np.array([0.5 * (bins[i] + bins[i+1]) for i in range(len(bins)-1)])
     binwidth = bins[1] - bins[0]
     pbins = np.append(bins,bins[-1]+binwidth)
     pdata = np.append(data,data[-1])
+    return np.array(pbins),np.array(pdata)
+
+def histplot(pdata,pbins,color,label,alpha=1.0,hatch=None,points=False,facecolorOn=True,ax=plt):
     if points:
-        pbins = pbins + binwidth/2.
         ax.plot(pbins[:-1],pdata[:-1],color=color,label=label,marker=".",linestyle="None")
     else:
         ax.step(pbins,pdata,where="post",color=color)
@@ -70,7 +72,10 @@ def histplot(data,bins,color,label,weights=None,alpha=1.0,hatch=None,points=Fals
         else:
             facecolor="none"
         ax.fill_between(pbins,pdata, step="post", edgecolor=color, facecolor=facecolor, label=label, alpha=alpha, hatch=hatch)
-    return pbins,pdata
+
+def histMakePlot(data,bins,color,label,weights=None,alpha=1.0,hatch=None,points=False,facecolorOn=True,norm=True,ax=plt):
+    pbins,pdata = histMake(data,bins,weights=weights,norm=norm)
+    histplot(pdata,pbins,color,label,alpha=alpha,hatch=hatch,points=points,facecolorOn=facecolorOn,ax=ax)
 
 def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,outf,wpt=0.5,sig=True):
     eff = []
@@ -87,25 +92,20 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
         weights_pTC = w_train[varCond]
         output_pTC_wpt = np.where(output_pTC>wpt,1,0)
         if sig:
-            kind = 1
+            ylabel = "Signal Efficiency"
+            plotname = outf + "/sigEffVs{}.pdf".format(varLabel)
             totalCount = label_pTC
         else:
-            kind = 0
+            ylabel = "Mistag Rate"
+            plotname = outf + "/mistagVs{}.pdf".format(varLabel)
             totalCount = label_pTC + 1
-        match_output_label = np.where(np.logical_and(label_pTC == output_pTC_wpt,output_pTC_wpt==kind),1.0,0.0)
-        weighted_num = np.sum(np.multiply(match_output_label,weights_pTC))
+        weighted_num = np.sum(np.multiply(output_pTC_wpt,weights_pTC))
         weighted_den = np.sum(np.multiply(totalCount,weights_pTC))
         eff.append(weighted_num/weighted_den)
     fig, ax = plt.subplots(figsize=(12, 8))
     plt.plot(binX,eff)
     plt.grid()
     plt.ylim(0,1)
-    if sig:
-        ylabel = "Signal Efficiency"
-        plotname = outf + "/sigEffVs{}.pdf".format(varLabel)
-    else:
-        ylabel = "Background Efficiency"
-        plotname = outf + "/bkgEffVs{}.pdf".format(varLabel)
     ax.set_ylabel(ylabel)
     ax.set_xlabel('{} (GeV)'.format(varLabel))
     plt.savefig(plotname, dpi=fig.dpi)
@@ -124,7 +124,7 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,weigh
         wVL = weights[cond]
         histVL = histVar[cond]
         if len(histVL) > 0:
-            histplot(histVL,bins=50,weights=wVL,color=mplColors[j%len(mplColors)],facecolorOn=False,alpha=0.5,label=lab)
+            histMakePlot(histVL,bins=50,weights=wVL,color=mplColors[j%len(mplColors)],facecolorOn=False,alpha=0.5,label=lab)
     ax.set_ylabel('Norm Events')
     ax.set_xlabel(xlabel)
     plt.legend()
@@ -179,6 +179,8 @@ def main():
     bkgOnly_test = label_test == 0
     sigOnly_test = np.logical_not(bkgOnly_test)
 
+    np.savez("pTTest",pT_train=pT_train,pTLab_train=pTLab_train)
+
     # Creating a pandas dataFrame for training data
     df = pd.DataFrame(data=input_train,columns=varSet)
     # # testing pT prediction with GR turned off
@@ -190,11 +192,19 @@ def main():
     axs = gs.subplots(sharex=True)
     binwidth = 1
     bins = np.arange(0,len(pTBins),binwidth)-0.5*binwidth
-    truepT_bins,truepT_hist = histplot(truepT,bins,"xkcd:blue","True pT",alpha=1.0,hatch="//",facecolorOn=False,norm=False,ax=axs[0])
-    prepT_bins,prepT_hist = histplot(predictedpT,bins,"xkcd:red","Predicted pT",points=True,norm=False,ax=axs[0])
-    axs[1].plot(bins[:-1]+binwidth,np.divide(prepT_hist,truepT_hist)[:-1],marker=".")
+    truepT_bins,truepT_hist = histMake(truepT,bins,weights=w_train,norm=False)
+    prepT_bins,prepT_hist = histMake(predictedpT,bins,weights=w_train,norm=False)
+    np.savez("ptPredTrue",truepT_hist=truepT_hist,prepT_hist=prepT_hist,pTBins=pTBins)
+    pTBP = []
+    for i in range(len(pTBins)):
+        if i == len(pTBins)-1:
+            pTBP.append(pTBins[i])
+        else:
+            pTBP.append(np.mean([pTBins[i],pTBins[i+1]]))
+    histplot(truepT_hist,pTBins,"xkcd:blue","True pT",alpha=1.0,hatch="//",facecolorOn=False,ax=axs[0])
+    histplot(prepT_hist,pTBP,"xkcd:red","Predicted pT",points=True,ax=axs[0])
+    axs[1].plot(pTBP[:-1],np.divide(prepT_hist,truepT_hist)[:-1],marker=".")
     axs[1].set_ylim(0,2)
-    axs[1].set_xlim(0,len(pTBins)-1)
     axs[1].set_yticks(np.arange(0,2,0.5))
     axs[0].set_yscale("log")
     axs[0].grid()
@@ -202,7 +212,7 @@ def main():
     axs[0].legend()
     axs[0].set_ylabel('Norm Events')
     plt.xlabel('pT (GeV)')
-    plt.xticks(ticks=bins[:-1]+binwidth*0.5,labels=[str(p) for p in pTBins[:-1]])
+    # plt.xticks(ticks=bins[:-1]+binwidth*0.5,labels=[str(p) for p in pTBins[:-1]])
     # Hide x labels and tick labels for all but bottom plot.
     for ax in axs:
         ax.label_outer()
@@ -229,8 +239,8 @@ def main():
             dataSig = df[var][sigOnly_train]
             dataBkg = df[var][bkgOnly_train]
             fig, ax = plt.subplots(figsize=(12, 8))
-            histplot(dataSig,bins=50,color='xkcd:blue',alpha=0.5,label='Background')
-            histplot(dataBkg,bins=50,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
+            histMakePlot(dataSig,bins=50,color='xkcd:blue',alpha=0.5,label='Background')
+            histMakePlot(dataBkg,bins=50,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
             ax.set_ylabel('Norm Events')
             ax.set_xlabel(var)
             plt.legend()
@@ -256,7 +266,7 @@ def main():
 
     # histogram NN score
     fig, ax = plt.subplots(figsize=(12, 8))
-    histplot(output_train_tag,bins=50,weights=w_train,color='xkcd:blue',alpha=0.5,label='Training set')
+    histMakePlot(output_train_tag,bins=50,weights=w_train,color='xkcd:blue',alpha=0.5,label='Training set')
     ax.set_ylabel('Norm Events')
     ax.set_xlabel("NN Score")
     plt.legend()
@@ -294,10 +304,10 @@ def main():
     ax.set_title('')
     ax.set_ylabel('Norm Events')
     ax.set_xlabel('Discriminator')
-    histplot(y_test_Sg,bins,weights=w_test_Sg,color='xkcd:red',alpha=1.0,label='Sg Test',hatch="//",facecolorOn=False)
-    histplot(y_test_Bg,bins,weights=w_test_Bg,color='xkcd:blue',alpha=0.5,label='Bg Test')
-    histplot(y_Train_Sg,bins,weights=w_Train_Sg,color='xkcd:red',label='Sg Train',points=True)
-    histplot(y_Train_Bg,bins,weights=w_Train_Bg,color='xkcd:blue',label='Bg Train',points=True)
+    histMakePlot(y_test_Sg,bins,weights=w_test_Sg,color='xkcd:red',alpha=1.0,label='Sg Test',hatch="//",facecolorOn=False)
+    histMakePlot(y_test_Bg,bins,weights=w_test_Bg,color='xkcd:blue',alpha=0.5,label='Bg Test')
+    histMakePlot(y_Train_Sg,bins,weights=w_Train_Sg,color='xkcd:red',label='Sg Train',points=True)
+    histMakePlot(y_Train_Bg,bins,weights=w_Train_Bg,color='xkcd:blue',label='Bg Train',points=True)
     ax.legend(loc='best', frameon=False)
     fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi)
 
