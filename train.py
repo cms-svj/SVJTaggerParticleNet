@@ -25,13 +25,13 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
-def processBatch(args, data, model, criterions, lambdas):
+def processBatch(args, device, data, model, criterions, lambdas):
     label, d, pTLab, pT, mT, w = data
     l1, l2, lgr = lambdas
-    output, output_pTClass = model(d.float().to(args.device), lgr)
+    output, output_pTClass = model(d.float().to(device), lgr)
     criterion, criterion_pTClass = criterions
-    batch_loss = criterion(output.to(args.device), label.squeeze(1).to(args.device)).to(args.device)
-    batch_loss_pTClass = criterion_pTClass(output_pTClass.to(args.device), pTLab.squeeze(1).to(args.device)).to(args.device)
+    batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
+    batch_loss_pTClass = criterion_pTClass(output_pTClass.to(device), pTLab.squeeze(1).to(device)).to(device)
     return l1*batch_loss,l2*batch_loss_pTClass
 
 def main():
@@ -42,13 +42,13 @@ def main():
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
+
     if not os.path.isdir(args.outf):
         os.mkdir(args.outf)
-    parser.write_config(args, args.outf + "/config_out.py")
     # Choose cpu or gpu
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print('Using device:', args.device)
-    if args.device.type == 'cuda':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print('Using device:', device)
+    if device.type == 'cuda':
         gpuIndex = torch.cuda.current_device()
         print("Using GPU named: \"{}\"".format(torch.cuda.get_device_name(gpuIndex)))
         #print('Memory Usage:')
@@ -77,22 +77,24 @@ def main():
     loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=4)
 
     # Build model
-    #model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=args.device)
+    #model = DNN(n_var=len(varSet), n_layers=hyper.num_of_layers, n_nodes=hyper.num_of_nodes, n_outputs=2, drop_out_p=hyper.dropout).to(device=device)
     print("Number of pT classes: {}".format(hyper.n_pTBins))
-    model = DNN_GRF(n_var=len(varSet), n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
+    model = DNN_GRF(n_var=len(varSet), n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=device)
     if (args.model == None):
         #model.apply(init_weights)
         print("Creating new model ")
+        args.model = 'net.pth'
     else:
-        print("Loading model from file " + args.model)
-        model.load_state_dict(torch.load(args.model))
+        print("Loading model from " + modelLocation)
+        model.load_state_dict(torch.load(modelLocation))
         model.eval()
+    modelLocation = "{}/{}".format(args.outf,args.model)
 
     # Loss function
     criterion = nn.CrossEntropyLoss()
     criterion_pTClass = nn.CrossEntropyLoss()
-    criterion.to(device=args.device)
-    criterion_pTClass.to(device=args.device)
+    criterion.to(device=device)
+    criterion_pTClass.to(device=device)
 
     #Optimizer
     optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate)
@@ -116,7 +118,7 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag,batch_loss_pTClass = processBatch(args, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            batch_loss_tag,batch_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
             batch_loss_total = batch_loss_tag + batch_loss_pTClass
             batch_loss_total.backward()
             optimizer.step()
@@ -140,7 +142,7 @@ def main():
         val_loss_pTClass = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag,output_loss_pTClass = processBatch(args, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            output_loss_tag,output_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
             output_loss_total = output_loss_tag + output_loss_pTClass
             val_loss_tag+=output_loss_tag.item()
             val_loss_pTClass+=output_loss_pTClass.item()
@@ -159,11 +161,11 @@ def main():
 
         # save the model
         model.eval()
-        torch.save(model.state_dict(), os.path.join(args.outf, 'net.pth'))
+        torch.save(model.state_dict(), modelLocation)
     writer.close()
 
     # plot loss/epoch for training and validation sets
-    print("Making validation plots")
+    print("Making basic validation plots")
     training_tag = plt.plot(training_losses_tag, label='training_tag')
     validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
     training_pTClass = plt.plot(training_losses_pTClass, label='training_pTClass')
@@ -174,6 +176,8 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
+
+    parser.write_config(args, args.outf + "/config_out.py")
 
 if __name__ == "__main__":
     main()

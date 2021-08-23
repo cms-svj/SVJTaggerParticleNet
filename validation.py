@@ -135,17 +135,19 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,weigh
 
 def main():
     # parse arguments
-    parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
+    parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="logs/config_out.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
-    parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
+    parser.add_argument("--model", type=str, default="net.pth", help="Existing model to continue training, if applicable")
     parser.add_argument("--pIn", action="store_true", help="Plot input variables and their correlation.")
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
+    modelLocation = "{}/{}".format(args.outf,args.model)
+
     # Choose cpu or gpu
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print('Using device:', args.device)
-    if args.device.type == 'cuda':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print('Using device:', device)
+    if device.type == 'cuda':
         gpuIndex = torch.cuda.current_device()
         print("Using GPU named: \"{}\"".format(torch.cuda.get_device_name(gpuIndex)))
 
@@ -165,9 +167,9 @@ def main():
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     # Build model
-    model = DNN_GRF(n_var=len(varSet),  n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=args.device)
-    print("Loading model from file " + args.model)
-    model.load_state_dict(torch.load(args.model))
+    model = DNN_GRF(n_var=len(varSet),  n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=device)
+    print("Loading model from file " + modelLocation)
+    model.load_state_dict(torch.load(modelLocation))
     model.eval()
     model.to('cpu')
     label_train, input_train, output_train_tag, output_train_pTClass, pTLab_train, pT_train, mT_train, w_train = getNNOutput(train, model)
