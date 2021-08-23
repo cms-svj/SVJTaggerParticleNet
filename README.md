@@ -9,3 +9,10 @@ cd SVJTaggerNN
 ./setup.sh
 ```
 
+#Example
+```
+python train.py --outf logTest
+python validation.py -C logTest/config_out.py --outf logTest
+
+```
+
