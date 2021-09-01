@@ -15,6 +15,7 @@ from configs import configs as c
 import numpy as np
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 from tqdm import tqdm
+from Disco import distance_corr
 
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -32,7 +33,12 @@ def processBatch(args, device, data, model, criterions, lambdas):
     criterion, criterion_pTClass = criterions
     batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     batch_loss_pTClass = criterion_pTClass(output_pTClass.to(device), pTLab.squeeze(1).to(device)).to(device)
-    return l1*batch_loss,l2*batch_loss_pTClass
+
+    # Added distance correlation calculation between tagger output and jet pT
+    outTag = f.softmax(output,dim=1)[:,1]
+    normedweight = torch.ones_like(outTag)
+    batch_loss_dc = distance_corr(outTag.to(device), pT.squeeze(1).to(device), normedweight.to(device), 1).to(device)
+    return l1*batch_loss, l2*batch_loss_pTClass, batch_loss_dc
 
 def main():
     # parse arguments
@@ -118,7 +124,7 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag,batch_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            batch_loss_tag, batch_loss_pTClass, _ = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
             batch_loss_total = batch_loss_tag + batch_loss_pTClass
             batch_loss_total.backward()
             optimizer.step()
@@ -142,7 +148,7 @@ def main():
         val_loss_pTClass = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag,output_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
+            output_loss_tag, output_loss_pTClass, _ = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
             output_loss_total = output_loss_tag + output_loss_pTClass
             val_loss_tag+=output_loss_tag.item()
             val_loss_pTClass+=output_loss_pTClass.item()
