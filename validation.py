@@ -105,7 +105,7 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
     fig, ax = plt.subplots(figsize=(12, 8))
     plt.plot(binX,eff)
     plt.grid()
-    plt.ylim(0,1)
+    plt.ylim(0,np.nanmax(eff)*1.1)
     ax.set_ylabel(ylabel)
     ax.set_xlabel('{} (GeV)'.format(varLabel))
     plt.savefig(plotname, dpi=fig.dpi)
