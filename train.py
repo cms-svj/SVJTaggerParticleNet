@@ -15,6 +15,7 @@ from configs import configs as c
 import numpy as np
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 from tqdm import tqdm
+from Disco import distance_corr
 
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -27,12 +28,17 @@ def init_weights(m):
 
 def processBatch(args, device, data, model, criterions, lambdas):
     label, d, pTLab, pT, mT, w = data
-    l1, l2, lgr = lambdas
+    l1, l2, lgr, ldc = lambdas
     output, output_pTClass = model(d.float().to(device), lgr)
     criterion, criterion_pTClass = criterions
     batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     batch_loss_pTClass = criterion_pTClass(output_pTClass.to(device), pTLab.squeeze(1).to(device)).to(device)
-    return l1*batch_loss,l2*batch_loss_pTClass
+
+    # Added distance correlation calculation between tagger output and jet pT
+    outTag = f.softmax(output,dim=1)[:,1]
+    normedweight = torch.ones_like(outTag)
+    batch_loss_dc = distance_corr(outTag.to(device), pT.squeeze(1).to(device), normedweight.to(device), 1).to(device)
+    return l1*batch_loss, l2*batch_loss_pTClass, ldc*batch_loss_dc
 
 def main():
     # parse arguments
@@ -104,59 +110,71 @@ def main():
     writer = SummaryWriter()
     training_losses_tag = np.zeros(hyper.epochs)
     training_losses_pTClass = np.zeros(hyper.epochs)
+    training_losses_dc = np.zeros(hyper.epochs)
     training_losses_total = np.zeros(hyper.epochs)
     validation_losses_tag = np.zeros(hyper.epochs)
     validation_losses_pTClass = np.zeros(hyper.epochs)
+    validation_losses_dc = np.zeros(hyper.epochs)
     validation_losses_total = np.zeros(hyper.epochs)
     for epoch in range(hyper.epochs):
         print("Beginning epoch " + str(epoch))
         # training
         train_loss_tag = 0
         train_loss_pTClass = 0
+        train_loss_dc = 0
         train_loss_total = 0
         for i, data in tqdm(enumerate(loader_train), unit="batch", total=len(loader_train)):
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag,batch_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
-            batch_loss_total = batch_loss_tag + batch_loss_pTClass
+            batch_loss_tag, batch_loss_pTClass, batch_loss_dc = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC])
+            batch_loss_total = batch_loss_tag + batch_loss_pTClass + batch_loss_dc
             batch_loss_total.backward()
             optimizer.step()
             model.eval()
             train_loss_tag += batch_loss_tag.item()
             train_loss_pTClass += batch_loss_pTClass.item()
+            train_loss_dc += batch_loss_dc.item()
             train_loss_total+=batch_loss_total.item()
             writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
         train_loss_tag /= len(loader_train)
         train_loss_pTClass /= len(loader_train)
+        train_loss_dc /= len(loader_train)
         train_loss_total /= len(loader_train)
         training_losses_tag[epoch] = train_loss_tag
         training_losses_pTClass[epoch] = train_loss_pTClass
+        training_losses_dc[epoch] = train_loss_dc
         training_losses_total[epoch] = train_loss_total
         print("t_tag: "+ str(train_loss_tag))
         print("t_pTClass: "+ str(train_loss_pTClass))
+        print("t_dc: "+ str(train_loss_dc))
         print("t_total: "+ str(train_loss_total))
 
         # validation
         val_loss_tag = 0
         val_loss_pTClass = 0
+        val_loss_dc = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag,output_loss_pTClass = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR])
-            output_loss_total = output_loss_tag + output_loss_pTClass
-            val_loss_tag+=output_loss_tag.item()
-            val_loss_pTClass+=output_loss_pTClass.item()
-            val_loss_total+=output_loss_total.item()
+            output_loss_tag, output_loss_pTClass, output_loss_dc = processBatch(args, device, data, model, [criterion, criterion_pTClass], [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC])
+            output_loss_total = output_loss_tag + output_loss_pTClass + output_loss_dc
+            val_loss_tag += output_loss_tag.item()
+            val_loss_pTClass += output_loss_pTClass.item()
+            val_loss_dc += output_loss_dc.item()
+            val_loss_total += output_loss_total.item()
         val_loss_tag /= len(loader_val)
         val_loss_pTClass /= len(loader_val)
+        val_loss_dc /= len(loader_val)
         val_loss_total /= len(loader_val)
         scheduler.step()
         #scheduler.step(torch.tensor([val_loss_total]))
         validation_losses_tag[epoch] = val_loss_tag
         validation_losses_pTClass[epoch] = val_loss_pTClass
+        validation_losses_dc[epoch] = val_loss_dc
         validation_losses_total[epoch] = val_loss_total
         print("v_tag: "+ str(val_loss_tag))
         print("v_pTClass: "+ str(val_loss_pTClass))
+        print("v_dc: "+ str(val_loss_dc))
         print("v_total: "+ str(val_loss_total))
 
         # save the model
@@ -170,6 +188,8 @@ def main():
     validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
     training_pTClass = plt.plot(training_losses_pTClass, label='training_pTClass')
     validation_pTClass = plt.plot(validation_losses_pTClass, label='validation_pTClass')
+    training_dc = plt.plot(training_losses_dc, label='training_dc')
+    validation_dc = plt.plot(validation_losses_dc, label='validation_dc')
     training_total = plt.plot(training_losses_total, label='training_total')
     validation_total = plt.plot(validation_losses_total, label='validation_total')
     plt.xlabel("epoch")
