@@ -41,9 +41,10 @@ config.hyper.num_of_layers_pT = 3
 config.hyper.num_of_nodes = 50
 config.hyper.dropout = 0.3
 config.hyper.epochs = 20
-config.hyper.lambdaTag = 80
+config.hyper.lambdaTag = 1.0
 config.hyper.lambdaReg = 1.0 # lambdaReg = 0.000001, lambdaGR = 1.0, give the same order of magnitude loss as loss_tag
-config.hyper.lambdaGR = 1.0 # try 1.0. 10.0, 100.0     1.0,2.0,3.0   2.1,2.2
+config.hyper.lambdaGR = 0.2 # try 1.0. 10.0, 100.0     1.0,2.0,3.0   2.1,2.2
+config.hyper.lambdaDC = 0.0 
 config.hyper.pTBins = range(0,5100,500)
 config.hyper.n_pTBins = len(config.hyper.pTBins)
 config.hyper.rseed = 30
