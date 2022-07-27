@@ -7,6 +7,12 @@ import torch
 import pandas as pd
 from torchvision import transforms
 
+def npAppend(array1,array2):
+    if np.any(array1) != True:
+        array1 = [array2]
+    else:
+        array1 = np.concatenate((array1,[array2]))
+
 def getBranch(f,tree,variable,branches,branchList):
     branch = f[tree].pandas.df(variable)
     branch = branch.head(len(branches))
@@ -53,9 +59,9 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
             if key == "signal":
-                jetCatBranch = f[tree].pandas.df("JetsAK8_hvCategory")
-                darkCon = ((jetCatBranch["JetsAK8_hvCategory"] == 3) | (jetCatBranch["JetsAK8_hvCategory"] == 9))
-                # print(jetCatBranch['JetsAK8_hvCategory'].value_counts())
+                jetCatBranch = f[tree].pandas.df("jCsthvCategory")
+                darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 9))
+                # print(jetCatBranch['jCsthvCategory'].value_counts())
                 branches = branches[darkCon]
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
             branches = branches.dropna()
@@ -100,6 +106,7 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     rinv = np.array(rinvs)
     alpha = np.array(alphas)
     dataSet = pd.concat(dSets)
+    print(dataSet.head())
     dfmean = dataSet.mean()
     dfstd = dataSet.std()
     dataSet = normalize(dataSet)
@@ -161,6 +168,8 @@ class RootDataset(udata.Dataset):
             label_np += 1
 
         data  = torch.from_numpy(data_np)
+        # print("Data inside getitem")
+        # print(data)
         label = torch.from_numpy(label_np)
         mcType = torch.from_numpy(mcType_np)
         pTLab = torch.from_numpy(pTLab_np)
@@ -210,6 +219,59 @@ if __name__=="__main__":
     print("labels:", labels)
     print("Number of signals: ",len(labels[labels==1]))
     print("Number of backgrounds: ",len(labels[labels==0]))
+
+    # put the following block of code into a function, make sure the input features and input points are correct.
+    evtNumIndex = varSet.index("jCstEvtNum")
+    fJetNumIndex = varSet.index("jCstJNum")
+    etaIndex = varSet.index("jCstEta")
+    phiIndex = varSet.index("jCstPhi")
+    hvIndex = varSet.index("jCsthvCategory")
+    evtNumColumn = data[:,evtNumIndex]
+    fJetNumColumn = data[:,fJetNumIndex]
+    evtFjetCom = []
+    for com in np.transpose([evtNumColumn,fJetNumColumn]):
+        alreadyExist = False
+        for u in evtFjetCom:
+            if (u[0] == com[0]) and (u[1] == com[1]):
+                alreadyExist = True
+                break
+        if alreadyExist:
+            continue
+        else:
+            evtFjetCom.append(com)
+
+    inputPoints = np.array([])
+    inputFeatures = np.array([])
+    totalEntry = 100 # following what the particleNet example did
+    for evtNum,fJNum in evtFjetCom: # somehow np.unique flipped the two entries in each row??
+        sameJetConstData = data[(evtNumColumn == evtNum) & (fJetNumColumn == fJNum)] # getting values for constituents in the same jet
+        sameJetConstDataTr = np.transpose(sameJetConstData)
+        if totalEntry > sameJetConstDataTr.shape[1]:
+            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,totalEntry-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
+        else:
+            paddedJetConstData = sameJetConstDataTr[:,:totalEntry]
+        eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
+        eachJetFeatures = []
+        for i in range(paddedJetConstData.shape[0]):
+            if i in [evtNumIndex,fJetNumIndex,hvIndex]:
+                continue
+            else:
+                if len(paddedJetConstData[i]) != 100:
+                    print(len(paddedJetConstData[i]))
+                eachJetFeatures.append(paddedJetConstData[i])
+        if np.any(inputPoints) != True:
+            inputPoints = [eachJetPoints]
+        else:
+            inputPoints = np.concatenate((inputPoints,[eachJetPoints]))
+        npAppend(inputPoints,eachJetPoints)
+        npAppend(inputFeatures,eachJetFeatures)
+        if np.any(inputFeatures) != True:
+            inputFeatures = [eachJetFeatures]
+        else:
+            inputFeatures = np.concatenate((inputFeatures,[eachJetFeatures]))
+
+    print("inputPoints:", inputPoints.shape)
+    print("inputFeatures:", inputFeatures.shape)
     print("inputData:", data)
     print("inputData shape:", data.shape)
     print("Input has nan:",np.isnan(np.sum(data)))
