@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as f
 import torch.utils.data as udata
 import os
-from models import DNN, DNN_GRF
+import particlenet_pf
 from dataset import RootDataset, get_sizes
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -16,6 +16,7 @@ from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_prec
 from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 import itertools
+import copy
 
 mpl.rc("font", family="serif", size=18)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -45,31 +46,51 @@ def collectiveKS(dataList):
     return ksSum/len(allComs)
 
 def getNNOutput(dataset, model):
-    loader = udata.DataLoader(dataset=dataset, batch_size=dataset.__len__(), num_workers=0)
-    l, d, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
-    labels = l.squeeze(1).numpy()
-    data = d.float()
-    print("Data type from getNNOutput:",type(data))
-    print("Data from getNNOutput:",data)
-    mcT = mct.squeeze(1).numpy()
-    pTL = pl.squeeze(1).float().numpy()
-    pT = p.squeeze(1).float().numpy()
-    mT = m.squeeze(1).float().numpy()
-    weight = w.squeeze(1).float().numpy()
-    meds = med.squeeze(1).float().numpy()
-    darks = dark.squeeze(1).float().numpy()
-    rinvs = rinv.squeeze(1).float().numpy()
-    alphas = alpha.squeeze(1).numpy()
-    model.eval()
-    out_tag, out_pTClass = model(data)
-    input = data.squeeze(1).numpy()
-    # output_pTClass = out_pTClass[:,0].detach().numpy()
-    output_pTClass = f.softmax(out_pTClass,dim=1).detach().numpy()
-    output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
-    # print(output_pTClass)
-    # print(output_tag)
-    # raise ValueError('Trying to stop the code here.')
-    return labels, input, output_tag, output_pTClass, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
+    batchSize = 512
+    fullDataSetSize = dataset.__len__()
+    numOfBatch, lastBatchSize = divmod(fullDataSetSize,batchSize)
+    print("Batch size: {}".format(batchSize), "Number of batches: {}".format(numOfBatch))
+    labels = np.array([])
+    output_tags = np.array([])
+    mcT = np.array([])
+    pTL = np.array([])
+    pT = np.array([])
+    mT = np.array([])
+    weight = np.array([])
+    meds = np.array([])
+    darks = np.array([])
+    rinvs = np.array([])
+    alphas = np.array([])
+    for i in range(numOfBatch):
+        if i == numOfBatch - 1:
+            batchSize = lastBatchSize
+        loader = udata.DataLoader(dataset=dataset, batch_size=batchSize, num_workers=0)
+        l, points, features, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
+        labels = np.concatenate((labels,l.squeeze(1).numpy()))
+        print("Loading batch {}".format(i+1))
+        print("In validation")
+        print("Number of signals: {} ".format(len(labels[labels==1])))
+        print("Number of backgrounds: {} ".format(len(labels[labels==0])))
+        mcT = np.concatenate((mcT,mct.squeeze(1).numpy()))
+        pTL = np.concatenate((pTL,pl.squeeze(1).float().numpy()))
+        pT = np.concatenate((pT,p.squeeze(1).float().numpy()))
+        mT = np.concatenate((mT,m.squeeze(1).float().numpy()))
+        weight = np.concatenate((weight,w.squeeze(1).float().numpy()))
+        meds = np.concatenate((meds,med.squeeze(1).float().numpy()))
+        darks = np.concatenate((darks,dark.squeeze(1).float().numpy()))
+        rinvs = np.concatenate((rinvs,rinv.squeeze(1).float().numpy()))
+        alphas = np.concatenate((alphas,alpha.squeeze(1).numpy()))
+        model.eval()
+        inputPoints = points.float()
+        inputFeatures = features.float()
+        print("size of inputPoints: {}".format(inputPoints.size()))
+        print("size of inputFeatures: {}".format(inputFeatures.size()))
+        out_tag = model(inputPoints,inputFeatures)
+        output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
+        output_tags = np.concatenate((output_tags,output_tag))
+        # print(output_tag)
+        # raise ValueError('Trying to stop the code here.')
+    return labels, output_tags, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
 
 def getROCStuff(label, output, weights=None):
     fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
@@ -288,6 +309,8 @@ def main():
     hyper = args.hyper
     inputFiles.update(sigFiles)
     varSet = args.features.train
+    inputFeatureVars = [var for var in varSet if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
+    print("Input feature variables:",inputFeatureVars)
     pTBins = hyper.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
@@ -296,13 +319,16 @@ def main():
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     # Build model
-    model = DNN_GRF(n_var=len(varSet),  n_layers_features=hyper.num_of_layers_features, n_layers_tag=hyper.num_of_layers_tag, n_layers_pT=hyper.num_of_layers_pT, n_nodes=hyper.num_of_nodes, n_outputs=2, n_pTBins=hyper.n_pTBins, drop_out_p=hyper.dropout).to(device=device)
+    network_module = particlenet_pf
+    network_options = {}
+    model = network_module.get_model(inputFeatureVars,**network_options)
+    model = copy.deepcopy(model)
     print("Loading model from file " + modelLocation)
     model.load_state_dict(torch.load(modelLocation))
     model.eval()
     model.to('cpu')
-    label_train, input_train, output_train_tag, output_train_pTClass, mcT_train, pTLab_train, pT_train, mT_train, w_train, med_train, dark_train, rinv_train, alpha_train = getNNOutput(train, model)
-    label_test, input_test, output_test_tag, output_test_pTClass, mcT_test, pTLab_test, pT_test, mT_test, w_test, med_test, dark_test, rinv_test, alpha_test = getNNOutput(test, model)
+    label_train, output_train_tag, mcT_train, pTLab_train, pT_train, mT_train, w_train, med_train, dark_train, rinv_train, alpha_train = getNNOutput(train, model)
+    label_test, output_test_tag, mcT_test, pTLab_test, pT_test, mT_test, w_test, med_test, dark_test, rinv_test, alpha_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
     baseline_train = mcT_train == 1
@@ -317,75 +343,42 @@ def main():
     sigtrain_NNOut = np.logical_not(bkgtrain_NNOut)
 
     # Creating a pandas dataFrame for training data
-    df = pd.DataFrame(data=input_train,columns=varSet)
+    # df = pd.DataFrame(data=inputFeatures_train,columns=varSet)
     # # testing pT prediction with GR turned off
-    predictedpT = np.argmax(output_train_pTClass,axis=1)
-    truepT = pTLab_train
-    fig = plt.figure(figsize=(12, 8))
-    gs = fig.add_gridspec(2, hspace=0,height_ratios=[5,1])
-    axs = gs.subplots(sharex=True)
-    binwidth = 1
-    bins = np.arange(0,len(pTBins),binwidth)-0.5*binwidth
-    truepT_bins,truepT_hist = histMake(truepT,bins,weights=w_train,norm=False)
-    prepT_bins,prepT_hist = histMake(predictedpT,bins,weights=w_train,norm=False)
-    pTBP = []
-    for i in range(len(pTBins)):
-        if i == len(pTBins)-1:
-            pTBP.append(pTBins[i])
-        else:
-            pTBP.append(np.mean([pTBins[i],pTBins[i+1]]))
-    histplot(truepT_hist,pTBins,"xkcd:blue","True pT",alpha=1.0,hatch="//",facecolorOn=False,ax=axs[0])
-    histplot(prepT_hist,pTBP,"xkcd:red","Predicted pT",points=True,ax=axs[0])
-    axs[1].plot(pTBP[:-1],np.divide(prepT_hist,truepT_hist)[:-1],marker=".")
-    axs[1].set_ylim(0,2)
-    axs[1].set_yticks(np.arange(0,2,0.5))
-    axs[0].set_yscale("log")
-    axs[0].grid()
-    axs[1].grid()
-    axs[0].legend()
-    axs[0].set_ylabel('Norm Events')
-    plt.xlabel('pT (GeV)')
-    # plt.xticks(ticks=bins[:-1]+binwidth*0.5,labels=[str(p) for p in pTBins[:-1]])
-    # Hide x labels and tick labels for all but bottom plot.
-    for ax in axs:
-        ax.label_outer()
-    plt.savefig(args.outf + "/predictedpTvstruepT.pdf", dpi=fig.dpi, bbox_inches="tight")
-    print("Finished making pT prediction plot")
-    # raise ValueError('Trying to stop the code here.')
 
-    if args.pIn:
-        # plot correlation
-        fig, ax = plt.subplots(figsize=(12, 8))
-        corr = np.round(df.corr(),2)
-        ax = sns.heatmap(corr,cmap="Spectral")
-        bottom, top = ax.get_ylim()
-        left, right = ax.get_xlim()
-        ax.set_ylim(bottom + 0.5, top - 0.5)
-        ax.set_xlim(left - 0.5, right + 0.5)
-        plt.savefig(args.outf + "/corrHeatMap.pdf", dpi=fig.dpi, bbox_inches="tight")
-        fig, ax = plt.subplots(figsize=(12, 8))
-
-        # plot input variable
-        zTests = pd.DataFrame(columns=["var","ztest"])
-        df["label"] = label_train
-        df["weights"] = w_train
-        for var in varSet:
-            dataSig = df[var][sigOnly_train]
-            dataBkg = df[var][bkgOnly_train]
-            plt.figure(figsize=(12, 8))
-            dataAll = np.concatenate((dataSig,dataBkg),axis=None)
-            minX = np.amin(dataAll)
-            maxX = np.amax(dataAll)
-            binX = np.linspace(minX,maxX,50)
-            histMakePlot(dataSig,binEdge=binX,color='xkcd:blue',alpha=0.5,label='Background')
-            histMakePlot(dataBkg,binEdge=binX,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
-            plt.ylabel('Norm Events')
-            plt.xlabel(var)
-            plt.legend()
-            plt.savefig(args.outf + "/{}.pdf".format(var), dpi=fig.dpi, bbox_inches="tight")
-            zt = ztest(dataSig,dataBkg)
-            zTests.loc[len(zTests.index)] = [var,zt]
-            zTests.to_csv("{}/zTests.csv".format(args.outf))
+    # if args.pIn:
+    #     # plot correlation
+    #     fig, ax = plt.subplots(figsize=(12, 8))
+    #     corr = np.round(df.corr(),2)
+    #     ax = sns.heatmap(corr,cmap="Spectral")
+    #     bottom, top = ax.get_ylim()
+    #     left, right = ax.get_xlim()
+    #     ax.set_ylim(bottom + 0.5, top - 0.5)
+    #     ax.set_xlim(left - 0.5, right + 0.5)
+    #     plt.savefig(args.outf + "/corrHeatMap.pdf", dpi=fig.dpi, bbox_inches="tight")
+    #     fig, ax = plt.subplots(figsize=(12, 8))
+    #
+    #     # plot input variable
+    #     zTests = pd.DataFrame(columns=["var","ztest"])
+    #     df["label"] = label_train
+    #     df["weights"] = w_train
+    #     for var in varSet:
+    #         dataSig = df[var][sigOnly_train]
+    #         dataBkg = df[var][bkgOnly_train]
+    #         plt.figure(figsize=(12, 8))
+    #         dataAll = np.concatenate((dataSig,dataBkg),axis=None)
+    #         minX = np.amin(dataAll)
+    #         maxX = np.amax(dataAll)
+    #         binX = np.linspace(minX,maxX,50)
+    #         histMakePlot(dataSig,binEdge=binX,color='xkcd:blue',alpha=0.5,label='Background')
+    #         histMakePlot(dataBkg,binEdge=binX,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
+    #         plt.ylabel('Norm Events')
+    #         plt.xlabel(var)
+    #         plt.legend()
+    #         plt.savefig(args.outf + "/{}.pdf".format(var), dpi=fig.dpi, bbox_inches="tight")
+    #         zt = ztest(dataSig,dataBkg)
+    #         zTests.loc[len(zTests.index)] = [var,zt]
+    #         zTests.to_csv("{}/zTests.csv".format(args.outf))
 
     # plot ROC curve
     fig = plt.figure()
@@ -469,12 +462,12 @@ def main():
     plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=dark_train[sigOnly_train],xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN_sig",xlim=[0,120],weights=w_train[sigOnly_train],histBinEdge=np.arange(5,111,10),dfOut=dfOut)
 
     # 2D histogram NN vs pT
-    NNvsVar2D(pT_train,output_train_tag,np.linspace(100,2000,100),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","",args.outf)
-    NNvsVar2D(pT_train[bkgOnly_train],output_train_tag[bkgOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","bkg",args.outf,dfOut)
-    NNvsVar2D(pT_train[sigOnly_train],output_train_tag[sigOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","sig",args.outf,dfOut)
-    NNvsVar2D(mT_train,output_train_tag,np.linspace(1500,3000,100),np.linspace(0,1.0,100),"$m_T (GeV)$","",args.outf)
-    NNvsVar2D(mT_train[bkgOnly_train],output_train_tag[bkgOnly_train],np.linspace(1500,3000,50),np.linspace(0,1.0,100),"$m_T (GeV)$","bkg",args.outf,dfOut)
-    NNvsVar2D(mT_train[sigOnly_train],output_train_tag[sigOnly_train],np.linspace(1500,3000,50),np.linspace(0,1.0,100),"$m_T (GeV)$","sig",args.outf,dfOut)
+    # NNvsVar2D(pT_train,output_train_tag,np.linspace(100,2000,100),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","",args.outf)
+    # NNvsVar2D(pT_train[bkgOnly_train],output_train_tag[bkgOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","bkg",args.outf,dfOut)
+    # NNvsVar2D(pT_train[sigOnly_train],output_train_tag[sigOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","sig",args.outf,dfOut)
+    # NNvsVar2D(mT_train,output_train_tag,np.linspace(1500,3000,100),np.linspace(0,1.0,100),"$m_T (GeV)$","",args.outf)
+    # NNvsVar2D(mT_train[bkgOnly_train],output_train_tag[bkgOnly_train],np.linspace(1500,3000,50),np.linspace(0,1.0,100),"$m_T (GeV)$","bkg",args.outf,dfOut)
+    # NNvsVar2D(mT_train[sigOnly_train],output_train_tag[sigOnly_train],np.linspace(1500,3000,50),np.linspace(0,1.0,100),"$m_T (GeV)$","sig",args.outf,dfOut)
 
     # save important quantities for assessing performance
     dfOut.to_csv("{}/output.csv".format(args.outf),index=False)

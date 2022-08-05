@@ -29,24 +29,6 @@ def get_graph_feature_v1(x, k, idx):
     return fts
 
 
-# v2 is faster on CPU
-def get_graph_feature_v2(x, k, idx):
-    batch_size, num_dims, num_points = x.size()
-
-    idx_base = torch.arange(0, batch_size, device=x.device).view(-1, 1, 1) * num_points
-    idx = idx + idx_base
-    idx = idx.view(-1)
-
-    fts = x.transpose(0, 1).reshape(num_dims, -1)  # -> (num_dims, batch_size, num_points) -> (num_dims, batch_size*num_points)
-    fts = fts[:, idx].view(num_dims, batch_size, num_points, k)  # neighbors: -> (num_dims, batch_size*num_points*k) -> ...
-    fts = fts.transpose(1, 0).contiguous()  # (batch_size, num_dims, num_points, k)
-
-    x = x.view(batch_size, num_dims, num_points, 1).repeat(1, 1, 1, k)
-    fts = torch.cat((x, fts - x), dim=1)  # ->(batch_size, 2*num_dims, num_points, k)
-
-    return fts
-
-
 class EdgeConvBlock(nn.Module):
     r"""EdgeConv layer.
     Introduced in "`Dynamic Graph CNN for Learning on Point Clouds
@@ -65,13 +47,13 @@ class EdgeConvBlock(nn.Module):
         Whether to include batch normalization on messages.
     """
 
-    def __init__(self, k, in_feat, out_feats, batch_norm=True, activation=True, cpu_mode=False):
+    def __init__(self, k, in_feat, out_feats, batch_norm=True, activation=True):
         super(EdgeConvBlock, self).__init__()
         self.k = k
         self.batch_norm = batch_norm
         self.activation = activation
         self.num_layers = len(out_feats)
-        self.get_graph_feature = get_graph_feature_v2 if cpu_mode else get_graph_feature_v1
+        self.get_graph_feature = get_graph_feature_v1
 
         self.convs = nn.ModuleList()
         for i in range(self.num_layers):
@@ -145,7 +127,7 @@ class ParticleNet(nn.Module):
         for idx, layer_param in enumerate(conv_params):
             k, channels = layer_param
             in_feat = input_dims if idx == 0 else conv_params[idx - 1][1][-1]
-            self.edge_convs.append(EdgeConvBlock(k=k, in_feat=in_feat, out_feats=channels, cpu_mode=for_inference))
+            self.edge_convs.append(EdgeConvBlock(k=k, in_feat=in_feat, out_feats=channels))
 
         self.use_fusion = use_fusion
         if self.use_fusion:
@@ -201,7 +183,7 @@ class ParticleNet(nn.Module):
             fts = self.fusion_block(torch.cat(outputs, dim=1)) * mask
 
 #         assert(((fts.abs().sum(dim=1, keepdim=True) != 0).float() - mask.float()).abs().sum().item() == 0)
-        
+
         if self.for_segmentation:
             x = fts
         else:
