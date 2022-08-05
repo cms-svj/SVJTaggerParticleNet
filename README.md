@@ -4,8 +4,8 @@
 
 ```
 cd <working_directory>
-git clone git@github.com:cms-svj/SVJTaggerNN.git
-cd SVJTaggerNN
+git clone git@github.com:cms-svj/SVJTaggerParticleNet.git
+cd SVJTaggerParticleNet
 ./setup.sh
 ```
 
