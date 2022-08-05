@@ -28,16 +28,11 @@ class ParticleNetTagger1Path(nn.Module):
                               use_counts=use_counts,
                               for_inference=for_inference)
 
-    def forward(self, pf_points, pf_features, pf_mask):
-        if self.pf_input_dropout:
-            pf_mask = (self.pf_input_dropout(pf_mask) != 0).float()
-            pf_points *= pf_mask
-            pf_features *= pf_mask
-
-        return self.pn(pf_points, self.pf_conv(pf_features * pf_mask) * pf_mask, pf_mask)
+    def forward(self, pf_points, pf_features):
+        return self.pn(pf_points, self.pf_conv(pf_features))
 
 
-def get_model(data_config, **kwargs):
+def get_model(inputFeatureVars,**kwargs):
     # conv_params = [
     #     (16, (64, 64, 64)),
     #     (16, (128, 128, 128)),
@@ -56,8 +51,8 @@ def get_model(data_config, **kwargs):
     fc_params = [(fc_c, fc_p)]
     use_fusion = True
 
-    pf_features_dims = len(data_config.input_dicts['pf_features'])
-    num_classes = len(data_config.label_value)
+    pf_features_dims = len(inputFeatureVars)
+    num_classes = 2 # need to make this smarter, not hardcoded
     model = ParticleNetTagger1Path(pf_features_dims, num_classes,
                                    conv_params, fc_params,
                                    use_fusion=use_fusion,
@@ -66,14 +61,14 @@ def get_model(data_config, **kwargs):
                                    pf_input_dropout=kwargs.get('pf_input_dropout', None),
                                    for_inference=kwargs.get('for_inference', False)
                                    )
-    model_info = {
-        'input_names':list(data_config.input_names),
-        'input_shapes':{k:((1,) + s[1:]) for k, s in data_config.input_shapes.items()},
-        'output_names':['softmax'],
-        'dynamic_axes':{**{k:{0:'N', 2:'n_' + k.split('_')[0]} for k in data_config.input_names}, **{'softmax':{0:'N'}}},
-        }
+    # model_info = {
+    #     'input_names':list(data_config.input_names),
+    #     'input_shapes':{k:((1,) + s[1:]) for k, s in data_config.input_shapes.items()},
+    #     'output_names':['softmax'],
+    #     'dynamic_axes':{**{k:{0:'N', 2:'n_' + k.split('_')[0]} for k in data_config.input_names}, **{'softmax':{0:'N'}}},
+    #     }
 
-    return model, model_info
+    return model
 
 
 def get_loss(data_config, **kwargs):
