@@ -7,11 +7,57 @@ import torch
 import pandas as pd
 from torchvision import transforms
 
-def npAppend(array1,array2):
-    if np.any(array1) != True:
-        array1 = [array2]
-    else:
-        array1 = np.concatenate((array1,[array2]))
+def getParticleNetInputs(dataSet,signalFileIndex):
+    varSet = dataSet.columns.tolist()
+    data = dataSet.to_numpy()
+    evtNumIndex = varSet.index("jCstEvtNum")
+    fJetNumIndex = varSet.index("jCstJNum")
+    etaIndex = varSet.index("jCstEta")
+    phiIndex = varSet.index("jCstPhi")
+    inFileIndex = varSet.index("inputFile")
+    hvIndex = varSet.index("jCsthvCategory")
+    jIDIndex = varSet.index("jID")
+    evtNumColumn = data[:,evtNumIndex]
+    fJetNumColumn = data[:,fJetNumIndex]
+    inFileColumn = data[:,inFileIndex]
+    inFColumn = data[:,inFileIndex]
+    jIDColumn = data[:,jIDIndex]
+
+    inputPoints = []
+    inputFeatures = []
+    totalEntry = 100 # following what the particleNet example did
+    # grouping constituents that belong to the same jet together
+    print("There are {} unique jets.".format(len(np.unique(jIDColumn))))
+    count = 1
+    signal = []
+    for jID in np.unique(jIDColumn):
+        if count % 200 == 0:
+            print("Analyzed {} jets".format(count))
+        count += 1
+        sameJetConstData = data[jIDColumn == jID] # getting values for constituents in the same jet
+        if sameJetConstData[0][inFileIndex] in signalFileIndex:
+            signal.append([0, 1])
+        else:
+            signal.append([1, 0])
+        sameJetConstDataTr = np.transpose(sameJetConstData)
+        if totalEntry > sameJetConstDataTr.shape[1]:
+            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,totalEntry-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
+        else:
+            paddedJetConstData = sameJetConstDataTr[:,:totalEntry]
+        eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
+        eachJetFeatures = []
+        for i in range(paddedJetConstData.shape[0]):
+            # make sure information that would easily give away the identity of the jet is not included as input features
+            if i not in [etaIndex,phiIndex,evtNumIndex,fJetNumIndex,inFileIndex,hvIndex,jIDIndex]:
+                eachJetFeatures.append(paddedJetConstData[i])
+        inputPoints.append(eachJetPoints)
+        inputFeatures.append(eachJetFeatures)
+    inputPoints = np.array(inputPoints)
+    inputFeatures = np.array(inputFeatures)
+    print("There are {} labels.".format(len(signal)))
+    print(inputPoints.shape)
+    print(inputFeatures.shape)
+    return inputPoints, inputFeatures, signal
 
 def getBranch(f,tree,variable,branches,branchList):
     branch = f[tree].pandas.df(variable)
@@ -39,6 +85,9 @@ def getPara(fileName,paraName,paraList,branches,key):
 def normalize(df):
     return (df-df.mean())/df.std()
 
+def jetIdentifier(dataSet):
+    dataSet["jID"] = (dataSet["jCstEvtNum"].astype(int))*10**6 + (dataSet["inputFile"].astype(int))*1000 + dataSet["jCstJNum"].astype(int)
+
 def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, tree="tree"):
     dSets = []
     signal = []
@@ -51,6 +100,8 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     rinvs = []
     alphas = []
     weights = []
+    fileIndex = 0
+    signalFileIndex = []
     for key,fileList in samples.items():
         nsigfiles = len(samples["signal"])
         nbkgfiles = len(samples["background"])
@@ -59,19 +110,24 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             f = up.open(inputFolder  + fileName + ".root")
             branches = f[tree].pandas.df(variables)
             if key == "signal":
+                signalFileIndex.append(fileIndex)
                 jetCatBranch = f[tree].pandas.df("jCsthvCategory")
-                darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 9))
+                darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 5) | (jetCatBranch["jCsthvCategory"] == 9))
                 # print(jetCatBranch['jCsthvCategory'].value_counts())
                 branches = branches[darkCon]
+            branches["inputFile"] = [fileIndex]*len(branches) # record name of the input file, important for distinguishing which jet the constituents belong to
+            fileIndex += 1
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
             branches = branches.dropna()
             numEvent = len(branches)
-            maxNum = 20000 # 10735 t-channel # 10031 s-channel # 29761 pair production
+            maxNum = 150000 # using 150000 for training
             numEvent = maxNum
             if key == "background":
                 numEvent = int(nsigfiles*maxNum/nbkgfiles)
             branches = branches.head(numEvent) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
+            # print(len(branches))
             # branches = branches.head(10000)
             dSets.append(branches)
             getBranch(f,tree,uniform,branches,pTs)
@@ -99,21 +155,31 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
                     mcType += [2] * len(branches)
                 else:
                     mcType += [3] * len(branches)
-            print("Number of Dark AK8Jets",len(branches))
+            print("Number of Constituents",len(branches))
     mcType = np.array(mcType)
     mMed = np.array(mMeds)
     mDark = np.array(mDarks)
     rinv = np.array(rinvs)
     alpha = np.array(alphas)
     dataSet = pd.concat(dSets)
+    jetIdentifier(dataSet)
+    print("dataSet.head()")
     print(dataSet.head())
     dfmean = dataSet.mean()
     dfstd = dataSet.std()
-    dataSet = normalize(dataSet)
+    dataSet["jCstEta_Norm"] = dataSet["jCstEta"]
+    dataSet["jCstPhi_Norm"] = dataSet["jCstPhi"]
+    columns_to_normalize = [var for var in variables if var not in ["jCstEta","jCstPhi","inputFile","jCstEvtNum","jCstJNum"]]
+    dataSet[columns_to_normalize] = normalize(dataSet[columns_to_normalize])
     pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
-    return [dataSet,signal,mcType,pTLab,pT,mT,weight,mMed,mDark,rinv,alpha,dfmean,dfstd]
+    inputPoints, inputFeatures, signal = getParticleNetInputs(dataSet,signalFileIndex)
+    sigLabel = np.array(signal)[:,1]
+    print("The total number of jets: {}".format(len(sigLabel)))
+    print("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
+    print("Total number of background jets: {}".format(len(sigLabel[sigLabel==0])))
+    return [inputPoints,inputFeatures,signal,mcType,pTLab,pT,mT,weight,mMed,mDark,rinv,alpha,dfmean,dfstd]
 
 def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     if sum(frac) != 1.0: raise ValueError("Sum of fractions does not equal 1.0")
@@ -125,12 +191,14 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
 
 class RootDataset(udata.Dataset):
     def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight):
-        dataSet, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas,dfmean,dfstd = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
+        inputPoints, inputFeatures, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas,dfmean,dfstd = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
         self.root_file = root_file
         self.variables = variables
         self.uniform = uniform
         self.weight = weight
-        self.vars = dataSet.astype(float).values
+        # self.vars = dataSet.astype(float).values
+        self.points = inputPoints
+        self.features = inputFeatures
         self.signal = signal
         self.mcType = mcType
         self.pTLab = pTLab
@@ -149,10 +217,11 @@ class RootDataset(udata.Dataset):
     #    return np.array(self.signal), torch.from_numpy(self.vars.astype(float).values.copy()).float().squeeze(1)
 
     def __len__(self):
-        return len(self.vars)
+        return len(self.points)
 
     def __getitem__(self, idx):
-        data_np = self.vars[idx].copy()
+        points_np = self.points[idx].copy()
+        features_np = self.features[idx].copy()
         label_np = np.zeros(1, dtype=np.long).copy()
         mcType_np = np.array([np.long(self.mcType[idx])]).copy()
         pTLab_np = np.array([np.long(self.pTLab[idx])]).copy()
@@ -167,7 +236,8 @@ class RootDataset(udata.Dataset):
         if self.signal[idx][1]:
             label_np += 1
 
-        data  = torch.from_numpy(data_np)
+        points  = torch.from_numpy(points_np)
+        features  = torch.from_numpy(features_np)
         # print("Data inside getitem")
         # print(data)
         label = torch.from_numpy(label_np)
@@ -180,7 +250,7 @@ class RootDataset(udata.Dataset):
         mDarks = torch.from_numpy(mDarks_np).float()
         rinvs = torch.from_numpy(rinvs_np).float()
         alphas = torch.from_numpy(alphas_np)
-        return label, data, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas
+        return label, points, features, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas
 
 if __name__=="__main__":
     # parse arguments
@@ -204,11 +274,21 @@ if __name__=="__main__":
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
-    l, d, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
+    l, po, fea, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
     labels = l.squeeze(1).numpy()
     mcType = mct.squeeze(1).numpy()
     pTLab = pl.squeeze(1).numpy()
-    data = d.float().numpy()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    points = po.float().numpy()
+    trainPoints = po.float().to(device)
+    features = fea.float().numpy()
+    trainFeatures = fea.float().to(device)
+    print("trainPoints")
+    print(trainPoints.shape)
+    print(trainPoints)
+    print("trainFeatures")
+    print(trainFeatures.shape)
+    print(trainFeatures)
     pTs = p.squeeze(1).float().numpy()
     mTs = m.squeeze(1).float().numpy()
     weights = w.squeeze(1).float().numpy()
@@ -219,64 +299,14 @@ if __name__=="__main__":
     print("labels:", labels)
     print("Number of signals: ",len(labels[labels==1]))
     print("Number of backgrounds: ",len(labels[labels==0]))
-
-    # put the following block of code into a function, make sure the input features and input points are correct.
-    evtNumIndex = varSet.index("jCstEvtNum")
-    fJetNumIndex = varSet.index("jCstJNum")
-    etaIndex = varSet.index("jCstEta")
-    phiIndex = varSet.index("jCstPhi")
-    hvIndex = varSet.index("jCsthvCategory")
-    evtNumColumn = data[:,evtNumIndex]
-    fJetNumColumn = data[:,fJetNumIndex]
-    evtFjetCom = []
-    for com in np.transpose([evtNumColumn,fJetNumColumn]):
-        alreadyExist = False
-        for u in evtFjetCom:
-            if (u[0] == com[0]) and (u[1] == com[1]):
-                alreadyExist = True
-                break
-        if alreadyExist:
-            continue
-        else:
-            evtFjetCom.append(com)
-
-    inputPoints = np.array([])
-    inputFeatures = np.array([])
-    totalEntry = 100 # following what the particleNet example did
-    for evtNum,fJNum in evtFjetCom: # somehow np.unique flipped the two entries in each row??
-        sameJetConstData = data[(evtNumColumn == evtNum) & (fJetNumColumn == fJNum)] # getting values for constituents in the same jet
-        sameJetConstDataTr = np.transpose(sameJetConstData)
-        if totalEntry > sameJetConstDataTr.shape[1]:
-            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,totalEntry-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
-        else:
-            paddedJetConstData = sameJetConstDataTr[:,:totalEntry]
-        eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
-        eachJetFeatures = []
-        for i in range(paddedJetConstData.shape[0]):
-            if i in [evtNumIndex,fJetNumIndex,hvIndex]:
-                continue
-            else:
-                if len(paddedJetConstData[i]) != 100:
-                    print(len(paddedJetConstData[i]))
-                eachJetFeatures.append(paddedJetConstData[i])
-        if np.any(inputPoints) != True:
-            inputPoints = [eachJetPoints]
-        else:
-            inputPoints = np.concatenate((inputPoints,[eachJetPoints]))
-        npAppend(inputPoints,eachJetPoints)
-        npAppend(inputFeatures,eachJetFeatures)
-        if np.any(inputFeatures) != True:
-            inputFeatures = [eachJetFeatures]
-        else:
-            inputFeatures = np.concatenate((inputFeatures,[eachJetFeatures]))
-
-    print("inputPoints:", inputPoints.shape)
-    print("inputFeatures:", inputFeatures.shape)
-    print("inputData:", data)
-    print("inputData shape:", data.shape)
-    print("Input has nan:",np.isnan(np.sum(data)))
-    print("inputMean:", np.mean(data,axis=0))
-    print("inputSTD:", np.std(data,axis=0))
+    print("Information for Points:")
+    print("Input has nan:",np.isnan(np.sum(points)))
+    print("inputMean:", np.mean(points,axis=0))
+    print("inputSTD:", np.std(points,axis=0))
+    print("Information for Features:")
+    print("Input has nan:",np.isnan(np.sum(features)))
+    print("inputMean:", np.mean(features,axis=0))
+    print("inputSTD:", np.std(features,axis=0))
     print("mcType:", mcType)
     print("pTLab:", pTLab)
     print("mT:", mTs)
