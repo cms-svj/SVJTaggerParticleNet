@@ -1,11 +1,13 @@
 import numpy as np
-import uproot as up
+import uproot4 as up
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
 import torch.utils.data as udata
 import torch
 import pandas as pd
 from torchvision import transforms
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 def getParticleNetInputs(dataSet,signalFileIndex):
     varSet = dataSet.columns.tolist()
@@ -25,6 +27,7 @@ def getParticleNetInputs(dataSet,signalFileIndex):
 
     inputPoints = []
     inputFeatures = []
+    inputFileIndices = []
     totalEntry = 100 # following what the particleNet example did
     # grouping constituents that belong to the same jet together
     print("There are {} unique jets.".format(len(np.unique(jIDColumn))))
@@ -32,7 +35,7 @@ def getParticleNetInputs(dataSet,signalFileIndex):
     signal = []
     for jID in np.unique(jIDColumn):
         if count % 200 == 0:
-            print("Analyzed {} jets".format(count))
+            print("Transformed {} jets".format(count))
         count += 1
         sameJetConstData = data[jIDColumn == jID] # getting values for constituents in the same jet
         if sameJetConstData[0][inFileIndex] in signalFileIndex:
@@ -52,12 +55,13 @@ def getParticleNetInputs(dataSet,signalFileIndex):
                 eachJetFeatures.append(paddedJetConstData[i])
         inputPoints.append(eachJetPoints)
         inputFeatures.append(eachJetFeatures)
+        inputFileIndices.append(inFileColumn[jIDColumn == jID][0])
     inputPoints = np.array(inputPoints)
     inputFeatures = np.array(inputFeatures)
     print("There are {} labels.".format(len(signal)))
     print(inputPoints.shape)
     print(inputFeatures.shape)
-    return inputPoints, inputFeatures, signal
+    return inputPoints, inputFeatures, signal, inputFileIndices
 
 def getBranch(f,tree,variable,branches,branchList):
     branch = f[tree].pandas.df(variable)
@@ -120,10 +124,15 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
             branches = branches.dropna()
             numEvent = len(branches)
-            maxNum = 150000 # using 150000 for training
-            numEvent = maxNum
-            if key == "background":
-                numEvent = int(nsigfiles*maxNum/nbkgfiles)
+            minNum = 105238 # 105238
+            maxMultiple = 2
+            maxNum = minNum * maxMultiple # using 105238 for lowest number of constituents from the training
+            # if we do not limit the number of constituents we read in, the code is gonna take very long to run
+            if numEvent > maxNum:
+                numEvent = maxNum
+            elif minNum < numEvent < maxNum:
+                factor = numEvent//minNum
+                numEvent = factor*minNum # make sure the number of constituents we keep are multiples of the minNum
             branches = branches.head(numEvent) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
             print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
@@ -165,6 +174,8 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     jetIdentifier(dataSet)
     print("dataSet.head()")
     print(dataSet.head())
+    print("The number of constituents in each input training file:")
+    print(dataSet["inputFile"].value_counts())
     dfmean = dataSet.mean()
     dfstd = dataSet.std()
     dataSet["jCstEta_Norm"] = dataSet["jCstEta"]
@@ -174,12 +185,53 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
-    inputPoints, inputFeatures, signal = getParticleNetInputs(dataSet,signalFileIndex)
+    inputPoints, inputFeatures, signal, inputFileIndices = getParticleNetInputs(dataSet,signalFileIndex)
     sigLabel = np.array(signal)[:,1]
     print("The total number of jets: {}".format(len(sigLabel)))
     print("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
     print("Total number of background jets: {}".format(len(sigLabel[sigLabel==0])))
-    return [inputPoints,inputFeatures,signal,mcType,pTLab,pT,mT,weight,mMed,mDark,rinv,alpha,dfmean,dfstd]
+    return [inputPoints,inputFeatures,signal,mcType,pTLab,pT,mT,weight,mMed,mDark,rinv,alpha,dfmean,dfstd,inputFileIndices,signalFileIndex]
+
+def splitArrayByChunkSize(alist,chunkSize):
+    if chunkSize > len(alist):
+        chunkSize = len(alist)
+    numOfChunks = len(alist) // chunkSize
+    aListChunks = []
+    start = 0
+    for i in range(numOfChunks):
+        end = start + chunkSize
+        aListChunks.append(alist[start:end])
+        start = end
+    return aListChunks
+
+def splitDataSetEvenly(dataset,rng,numOfEpoch=10):
+    inputFileIndex = dataset.inputFileIndex
+    signalFileIndex = dataset.signalFileIndex
+    listIndices = np.arange(len(inputFileIndex))
+    inputFileIndex = np.array(inputFileIndex)
+    minOcc = np.amin(np.unique(inputFileIndex,return_counts=True)[1])
+    uniqueFileIndices = np.unique(inputFileIndex)
+    numOfSigFiles = len(signalFileIndex)
+    numOfBkgFiles = len(uniqueFileIndices) - numOfSigFiles
+    allSamplesIndices = []
+    numOfSets = []
+    for i in uniqueFileIndices:
+        chunkSize = minOcc
+        subIndexList = listIndices[inputFileIndex==i]
+        rng.shuffle(subIndexList)
+        if i not in signalFileIndex:
+            chunkSize = int(minOcc*(numOfSigFiles/numOfBkgFiles)) # this is assuming there are more background events than signal events in general
+        indexSet = splitArrayByChunkSize(subIndexList,chunkSize)
+        allSamplesIndices.append(indexSet)
+        numOfSets.append(len(indexSet))
+    randBalancedSet = []
+    for i in range(numOfEpoch):
+        randomIndexSet = [rng.randint(0,high=ind) for ind in numOfSets]
+        indicesForEpoch = np.array([],dtype=int)
+        for j in range(len(allSamplesIndices)):
+            indicesForEpoch = np.concatenate((indicesForEpoch,allSamplesIndices[j][randomIndexSet[j]]))
+        randBalancedSet.append(indicesForEpoch)
+    return randBalancedSet
 
 def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     if sum(frac) != 1.0: raise ValueError("Sum of fractions does not equal 1.0")
@@ -191,7 +243,7 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
 
 class RootDataset(udata.Dataset):
     def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight):
-        inputPoints, inputFeatures, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas,dfmean,dfstd = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
+        inputPoints, inputFeatures, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas, dfmean, dfstd, inputFileIndex, signalFileIndex = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
         self.root_file = root_file
         self.variables = variables
         self.uniform = uniform
@@ -211,6 +263,8 @@ class RootDataset(udata.Dataset):
         self.alphas = alphas
         self.normMean = np.array(dfmean)
         self.normstd = np.array(dfstd)
+        self.inputFileIndex = np.array(inputFileIndex)
+        self.signalFileIndex = np.array(signalFileIndex)
         print("Number of events:", len(self.signal))
 
     #def get_arrays(self):
@@ -254,6 +308,7 @@ class RootDataset(udata.Dataset):
 
 if __name__=="__main__":
     # parse arguments
+    rng = np.random.RandomState(2022) # set seeds for numpy.random
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
@@ -271,10 +326,19 @@ if __name__=="__main__":
     mTs = args.features.mT
     weights = args.features.weight
     dataset = RootDataset(dSet.path, inputFiles, varSet, pTBins, uniform, mTs, weights)
-    sizes = get_sizes(len(dataset), dSet.sample_fractions)
-    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-    loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
-    l, po, fea, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
+    print("Splitting dataset")
+    # print(udata.Subset(dataset,np.arange(0,100)))
+    randBalancedSet = splitDataSetEvenly(dataset)
+    entireDataSet = dataset
+    print("randBalancedSet:")
+    for set in randBalancedSet:
+        print(set)
+    for i in range(10):
+        dataset = udata.Subset(entireDataSet,randBalancedSet[i])
+        sizes = get_sizes(len(dataset), dSet.sample_fractions)
+        train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+        loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
+        l, po, fea, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
     labels = l.squeeze(1).numpy()
     mcType = mct.squeeze(1).numpy()
     pTLab = pl.squeeze(1).numpy()
@@ -283,12 +347,6 @@ if __name__=="__main__":
     trainPoints = po.float().to(device)
     features = fea.float().numpy()
     trainFeatures = fea.float().to(device)
-    print("trainPoints")
-    print(trainPoints.shape)
-    print(trainPoints)
-    print("trainFeatures")
-    print(trainFeatures.shape)
-    print(trainFeatures)
     pTs = p.squeeze(1).float().numpy()
     mTs = m.squeeze(1).float().numpy()
     weights = w.squeeze(1).float().numpy()
