@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as f
 import torch.utils.data as udata
+from torch.cuda.amp import autocast
 import os
 import particlenet_pf
 from dataset import RootDataset, get_sizes
@@ -15,6 +16,7 @@ import seaborn as sns
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 from scipy import stats
 from scipy.spatial.distance import pdist, squareform
+from tqdm import tqdm
 import itertools
 import copy
 
@@ -47,9 +49,6 @@ def collectiveKS(dataList):
 
 def getNNOutput(dataset, model):
     batchSize = 512
-    fullDataSetSize = dataset.__len__()
-    numOfBatch, lastBatchSize = divmod(fullDataSetSize,batchSize)
-    print("Batch size: {}".format(batchSize), "Number of batches: {}".format(numOfBatch))
     labels = np.array([])
     output_tags = np.array([])
     mcT = np.array([])
@@ -61,16 +60,11 @@ def getNNOutput(dataset, model):
     darks = np.array([])
     rinvs = np.array([])
     alphas = np.array([])
-    for i in range(numOfBatch):
-        if i == numOfBatch - 1:
-            batchSize = lastBatchSize
-        loader = udata.DataLoader(dataset=dataset, batch_size=batchSize, num_workers=0)
-        l, points, features, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
+    loader = udata.DataLoader(dataset=dataset, batch_size=batchSize, num_workers=0)
+    for i, data in tqdm(enumerate(loader), unit="batch", total=len(loader)):
+        print("\nLoading batch {}".format(i+1))
+        l, points, features, mct, pl, p, m, w, med, dark, rinv, alpha = data
         labels = np.concatenate((labels,l.squeeze(1).numpy()))
-        print("Loading batch {}".format(i+1))
-        print("In validation")
-        print("Number of signals: {} ".format(len(labels[labels==1])))
-        print("Number of backgrounds: {} ".format(len(labels[labels==0])))
         mcT = np.concatenate((mcT,mct.squeeze(1).numpy()))
         pTL = np.concatenate((pTL,pl.squeeze(1).float().numpy()))
         pT = np.concatenate((pT,p.squeeze(1).float().numpy()))
@@ -85,11 +79,10 @@ def getNNOutput(dataset, model):
         inputFeatures = features.float()
         print("size of inputPoints: {}".format(inputPoints.size()))
         print("size of inputFeatures: {}".format(inputFeatures.size()))
-        out_tag = model(inputPoints,inputFeatures)
-        output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
-        output_tags = np.concatenate((output_tags,output_tag))
-        # print(output_tag)
-        # raise ValueError('Trying to stop the code here.')
+        with autocast():
+            out_tag = model(inputPoints,inputFeatures)
+            output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
+            output_tags = np.concatenate((output_tags,output_tag))
     return labels, output_tags, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
 
 def getROCStuff(label, output, weights=None):
@@ -326,7 +319,7 @@ def main():
     print("Loading model from file " + modelLocation)
     model.load_state_dict(torch.load(modelLocation))
     model.eval()
-    model.to('cpu')
+    model.to(device)
     label_train, output_train_tag, mcT_train, pTLab_train, pT_train, mT_train, w_train, med_train, dark_train, rinv_train, alpha_train = getNNOutput(train, model)
     label_test, output_test_tag, mcT_test, pTLab_test, pT_test, mT_test, w_test, med_test, dark_test, rinv_test, alpha_test = getNNOutput(test, model)
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
@@ -366,7 +359,7 @@ def main():
     #         dataSig = df[var][sigOnly_train]
     #         dataBkg = df[var][bkgOnly_train]
     #         plt.figure(figsize=(12, 8))
-    #         dataAll = np.concatenate((dataSig,dataBkg),axis=None)
+    #         dataAll = dataSig,dataBkg),axis=None)
     #         minX = np.amin(dataAll)
     #         maxX = np.amax(dataAll)
     #         binX = np.linspace(minX,maxX,50)

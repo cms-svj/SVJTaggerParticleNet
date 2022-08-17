@@ -9,7 +9,7 @@ import torch.utils.data as udata
 import torch.optim as optim
 import os
 import particlenet_pf
-from dataset import RootDataset, get_sizes
+from dataset import RootDataset, get_sizes, splitDataSetEvenly
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
@@ -53,6 +53,7 @@ def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc
 
 def main():
+    rng = np.random.RandomState(2022)
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
@@ -88,12 +89,8 @@ def main():
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
-    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight)
-    sizes = get_sizes(len(dataset), dSet.sample_fractions)
-    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=4, shuffle=True)
-    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=4)
-    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=4)
+    entireDataSet = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight)
+    randBalancedSet = splitDataSetEvenly(entireDataSet,rng,hyper.epochs)
     # Build model
     network_module = particlenet_pf
     network_options = {}
@@ -126,6 +123,12 @@ def main():
     validation_losses_dc = np.zeros(hyper.epochs)
     validation_losses_total = np.zeros(hyper.epochs)
     for epoch in range(hyper.epochs):
+        dataset = udata.Subset(entireDataSet,randBalancedSet[epoch])
+        sizes = get_sizes(len(dataset), dSet.sample_fractions)
+        train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+        loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=4, shuffle=True)
+        loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=4)
+        loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=4)
         print("Beginning epoch " + str(epoch))
         # training
         train_loss_tag = 0
@@ -200,7 +203,7 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    np.savez(args.outf + "/normMeanStd",normMean=dataset.normMean,normStd=dataset.normstd)
+    np.savez(args.outf + "/normMeanStd",normMean=entireDataSet.normMean,normStd=entireDataSet.normstd)
     parser.write_config(args, args.outf + "/config_out.py")
 
 if __name__ == "__main__":
