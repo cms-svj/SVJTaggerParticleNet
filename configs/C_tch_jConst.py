@@ -1,7 +1,7 @@
 from magiconfig import MagiConfig
 
 config = MagiConfig(dataset=MagiConfig(), features=MagiConfig(), training=MagiConfig(), hyper=MagiConfig())
-config.dataset.path = "/eos/user/c/chin/SVJTrainingFiles/jetConstTrainingFiles/"
+config.dataset.path = "/work1/cms_svj/keane/particleNet/jetConstTrainingFiles/"
 allsigs = [
 "tree_SVJ_mMed-1000_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
 "tree_SVJ_mMed-1500_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
@@ -19,7 +19,6 @@ allsigs = [
 ]
 config.dataset.signal = {"signal": list(sorted(set(allsigs)))}
 config.dataset.background =  {"background": [
-"tree_QCD_Pt_170to300_MC2018",
 "tree_QCD_Pt_300to470_MC2018",
 "tree_QCD_Pt_470to600_MC2018",
 "tree_QCD_Pt_600to800_MC2018",
@@ -56,6 +55,7 @@ config.features.train = [
 ]
 config.hyper.learning_rate = 0.001
 config.hyper.batchSize = 1024
+config.hyper.numConst = 100
 config.hyper.num_of_layers_features = 2
 config.hyper.num_of_layers_tag = 2
 config.hyper.num_of_layers_pT = 5

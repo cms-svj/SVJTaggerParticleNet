@@ -1,15 +1,13 @@
 import numpy as np
-import uproot4 as up
+import uproot as up
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
 import torch.utils.data as udata
 import torch
 import pandas as pd
-from torchvision import transforms
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-def getParticleNetInputs(dataSet,signalFileIndex):
+def getParticleNetInputs(dataSet,signalFileIndex,numConst):
     varSet = dataSet.columns.tolist()
     data = dataSet.to_numpy()
     evtNumIndex = varSet.index("jCstEvtNum")
@@ -28,7 +26,6 @@ def getParticleNetInputs(dataSet,signalFileIndex):
     inputPoints = []
     inputFeatures = []
     inputFileIndices = []
-    totalEntry = 100 # following what the particleNet example did
     # grouping constituents that belong to the same jet together
     print("There are {} unique jets.".format(len(np.unique(jIDColumn))))
     count = 1
@@ -43,10 +40,10 @@ def getParticleNetInputs(dataSet,signalFileIndex):
         else:
             signal.append([1, 0])
         sameJetConstDataTr = np.transpose(sameJetConstData)
-        if totalEntry > sameJetConstDataTr.shape[1]:
-            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,totalEntry-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
+        if numConst > sameJetConstDataTr.shape[1]:
+            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,numConst-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
         else:
-            paddedJetConstData = sameJetConstDataTr[:,:totalEntry]
+            paddedJetConstData = sameJetConstDataTr[:,:numConst]
         eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
         eachJetFeatures = []
         for i in range(paddedJetConstData.shape[0]):
@@ -63,8 +60,8 @@ def getParticleNetInputs(dataSet,signalFileIndex):
     print(inputFeatures.shape)
     return inputPoints, inputFeatures, signal, inputFileIndices
 
-def getBranch(f,tree,variable,branches,branchList):
-    branch = f[tree].pandas.df(variable)
+def getBranch(ftree,variable,branches,branchList):
+    branch = ftree.arrays(variable,library="pd")
     branch = branch.head(len(branches))
     branchList.append(branch)
 
@@ -92,7 +89,7 @@ def normalize(df):
 def jetIdentifier(dataSet):
     dataSet["jID"] = (dataSet["jCstEvtNum"].astype(int))*10**6 + (dataSet["inputFile"].astype(int))*1000 + dataSet["jCstJNum"].astype(int)
 
-def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, tree="tree"):
+def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, numConst, tree="tree"):
     dSets = []
     signal = []
     mcType =[] # 0 = signals other than baseline, 1 = baseline signal, 2 = QCD, 3 = TTJets
@@ -112,10 +109,11 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
         for fileName in fileList:
             print(fileName)
             f = up.open(inputFolder  + fileName + ".root")
-            branches = f[tree].pandas.df(variables)
+            ftree = f[tree]
+            branches = ftree.arrays(variables,library="pd")
             if key == "signal":
                 signalFileIndex.append(fileIndex)
-                jetCatBranch = f[tree].pandas.df("jCsthvCategory")
+                jetCatBranch = ftree.arrays("jCsthvCategory",library="pd")
                 darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 5) | (jetCatBranch["jCsthvCategory"] == 9))
                 # print(jetCatBranch['jCsthvCategory'].value_counts())
                 branches = branches[darkCon]
@@ -124,7 +122,7 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
             branches = branches.dropna()
             numEvent = len(branches)
-            minNum = 105238 # 105238
+            minNum = 5000 # 105238
             maxMultiple = 2
             maxNum = minNum * maxMultiple # using 105238 for lowest number of constituents from the training
             # if we do not limit the number of constituents we read in, the code is gonna take very long to run
@@ -133,22 +131,22 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
             elif minNum < numEvent < maxNum:
                 factor = numEvent//minNum
                 numEvent = factor*minNum # make sure the number of constituents we keep are multiples of the minNum
-            branches = branches.head(numEvent) #Hardcoded only taking ~30k events per file while we setup the code; should remove this when we want to do some serious trainings
+            branches = branches.head(numEvent)
             print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
             # print(len(branches))
             # branches = branches.head(10000)
             dSets.append(branches)
-            getBranch(f,tree,uniform,branches,pTs)
-            getBranch(f,tree,mT,branches,mTs)
-            getBranch(f,tree,weight,branches,weights)
+            getBranch(ftree,uniform,branches,pTs)
+            getBranch(ftree,mT,branches,mTs)
+            getBranch(ftree,weight,branches,weights)
             # getPara(fileName,"mZprime",mMeds,branches,key)
             getPara(fileName,"mMed",mMeds,branches,key) # use this for t-channel
             getPara(fileName,"mDark",mDarks,branches,key)
             getPara(fileName,"rinv",rinvs,branches,key)
             getPara(fileName,"alpha",alphas,branches,key)
             # get the pT label based on what pT bin the jet pT falls into
-            branch = f[tree].pandas.df(uniform)
+            branch = ftree.arrays(uniform,library="pd")
             branch = branch.head(len(branches)).to_numpy().flatten()
             pTLabel = np.digitize(branch,pTBins) - 1.0
             pTLab = np.append(pTLab,pTLabel)
@@ -185,7 +183,7 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, t
     pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
-    inputPoints, inputFeatures, signal, inputFileIndices = getParticleNetInputs(dataSet,signalFileIndex)
+    inputPoints, inputFeatures, signal, inputFileIndices = getParticleNetInputs(dataSet,signalFileIndex,numConst)
     sigLabel = np.array(signal)[:,1]
     print("The total number of jets: {}".format(len(sigLabel)))
     print("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
@@ -242,8 +240,8 @@ def get_sizes(l, frac=[0.8, 0.1, 0.1]):
     return [train_size, test_size, val_size]
 
 class RootDataset(udata.Dataset):
-    def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight):
-        inputPoints, inputFeatures, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas, dfmean, dfstd, inputFileIndex, signalFileIndex = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight)
+    def __init__(self, inputFolder, root_file, variables, pTBins, uniform, mT, weight, numConst):
+        inputPoints, inputFeatures, signal, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas, dfmean, dfstd, inputFileIndex, signalFileIndex = get_all_vars(inputFolder, root_file, variables, pTBins, uniform, mT, weight, numConst)
         self.root_file = root_file
         self.variables = variables
         self.uniform = uniform
@@ -325,7 +323,8 @@ if __name__=="__main__":
     uniform = args.features.uniform
     mTs = args.features.mT
     weights = args.features.weight
-    dataset = RootDataset(dSet.path, inputFiles, varSet, pTBins, uniform, mTs, weights)
+    numConst = args.hyper.numConst
+    dataset = RootDataset(dSet.path, inputFiles, varSet, pTBins, uniform, mTs, weights, numConst)
     print("Splitting dataset")
     # print(udata.Subset(dataset,np.arange(0,100)))
     randBalancedSet = splitDataSetEvenly(dataset)

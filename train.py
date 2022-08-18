@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn import functional as f
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 from torch.cuda.amp import autocast
 import torch.utils.data as udata
 import torch.optim as optim
@@ -43,7 +43,7 @@ def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     outTag = f.softmax(output,dim=1)[:,1]
     normedweight = torch.ones_like(outTag)
     # disco signal parameter
-    sgpVal = dark.squeeze(1)
+    sgpVal = dark.squeeze(1).to(device)
     mask = sgpVal.gt(0).to(device)
     maskedoutTag = torch.masked_select(outTag, mask)
     maskedsgpVal = torch.masked_select(sgpVal, mask)
@@ -89,7 +89,8 @@ def main():
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
-    entireDataSet = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight)
+    numConst = args.hyper.numConst
+    entireDataSet = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight, numConst=numConst)
     randBalancedSet = splitDataSetEvenly(entireDataSet,rng,hyper.epochs)
     # Build model
     network_module = particlenet_pf
@@ -115,7 +116,7 @@ def main():
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95, last_epoch=-1, verbose=True)
 
     # training and validation
-    writer = SummaryWriter()
+    # writer = SummaryWriter()
     training_losses_tag = np.zeros(hyper.epochs)
     training_losses_dc = np.zeros(hyper.epochs)
     training_losses_total = np.zeros(hyper.epochs)
@@ -126,9 +127,9 @@ def main():
         dataset = udata.Subset(entireDataSet,randBalancedSet[epoch])
         sizes = get_sizes(len(dataset), dSet.sample_fractions)
         train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-        loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=4, shuffle=True)
-        loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=4)
-        loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=4)
+        loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
+        loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
+        loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
         print("Beginning epoch " + str(epoch))
         # training
         train_loss_tag = 0
@@ -148,7 +149,7 @@ def main():
             #train_loss_dc += batch_loss_dc.item()
             #train_dc_val += dc_val.item()
             train_loss_total+=batch_loss_total.item()
-            writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
+            # writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
         train_loss_tag /= len(loader_train)
         train_loss_dc /= len(loader_train)
         train_dc_val /= len(loader_train)
@@ -189,7 +190,7 @@ def main():
         # save the model
         model.eval()
         torch.save(model.state_dict(), modelLocation)
-    writer.close()
+    # writer.close()
 
     # plot loss/epoch for training and validation sets
     print("Making basic validation plots")
