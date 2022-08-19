@@ -103,6 +103,7 @@ def main():
     else:
         print("Loading model from " + modelLocation)
     model = copy.deepcopy(model)
+    # model= nn.DataParallel(model)
     model = model.to(device)
     model.eval()
     modelLocation = "{}/{}".format(args.outf,args.model)
@@ -148,8 +149,9 @@ def main():
             train_loss_tag += batch_loss_tag.item()
             #train_loss_dc += batch_loss_dc.item()
             #train_dc_val += dc_val.item()
-            train_loss_total+=batch_loss_total.item()
+            train_loss_total += batch_loss_total.item()
             # writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
+            del batch_loss_tag, batch_loss_total, dc_val
         train_loss_tag /= len(loader_train)
         train_loss_dc /= len(loader_train)
         train_dc_val /= len(loader_train)
@@ -174,6 +176,7 @@ def main():
             # val_loss_dc += output_loss_dc.item()
             # val_dc_val += dc_val.item()
             val_loss_total += output_loss_total.item()
+            del output_loss_tag, output_loss_dc, dc_val
         val_loss_tag /= len(loader_val)
         val_loss_dc /= len(loader_val)
         val_dc_val /= len(loader_val)
@@ -190,6 +193,9 @@ def main():
         # save the model
         model.eval()
         torch.save(model.state_dict(), modelLocation)
+        del dataset, sizes, train, val, test, loader_train, loader_val, loader_test
+        del train_loss_tag, train_loss_dc, train_dc_val, train_loss_total
+        del val_loss_tag, val_loss_dc, val_dc_val, val_loss_total
     # writer.close()
 
     # plot loss/epoch for training and validation sets
