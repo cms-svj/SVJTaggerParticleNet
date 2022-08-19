@@ -53,14 +53,16 @@ config.features.train = [
 "jCstEvtNum",
 "jCstJNum"
 ]
+# particleNet hyperparameters
 config.hyper.learning_rate = 0.001
-config.hyper.batchSize = 1024
+config.hyper.batchSize = 512
 config.hyper.numConst = 100
-config.hyper.num_of_layers_features = 2
-config.hyper.num_of_layers_tag = 2
-config.hyper.num_of_layers_pT = 5
-config.hyper.num_of_nodes = 40
-config.hyper.dropout = 0.3
+config.hyper.num_of_k_nearest = 16
+config.hyper.num_of_edgeConv_dim = [64,128,256]
+config.hyper.num_of_edgeConv_convLayers = 3
+config.hyper.num_of_fc_layers = 1
+config.hyper.num_of_fc_nodes = 256
+config.hyper.fc_dropout = 0.1
 config.hyper.epochs = 50
 config.hyper.lambdaTag = 1.0
 config.hyper.lambdaReg = 0.0

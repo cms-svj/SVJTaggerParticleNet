@@ -18,10 +18,12 @@ from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_prec
 from tqdm import tqdm
 from Disco import distance_corr
 import copy
+from GPUtil import showUtilization as gpu_usage
 
 # ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["NCCL_DEBUG"] = "INFO"
 
 def init_weights(m):
     if type(m) == nn.Linear:
@@ -31,11 +33,16 @@ def init_weights(m):
 def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     label, points, features, mcType, pTLab, pT, mT, w, med, dark, rinv, alpha = data
     l1, l2, lgr, ldc = lambdas
+    print("\n Initial GPU Usage")
+    gpu_usage()
     with autocast():
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
         output = model(points.float().to(device), features.float().to(device))
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
+    torch.cuda.empty_cache()
+    print("\n After emptying cache")
+    gpu_usage()
     pTVal = pTLab.squeeze(1)
     labVal = label.squeeze(1)
 
@@ -43,13 +50,15 @@ def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     outTag = f.softmax(output,dim=1)[:,1]
     normedweight = torch.ones_like(outTag)
     # disco signal parameter
-    sgpVal = dark.squeeze(1).to(device)
+    sgpVal = pT.squeeze(1).to(device)
     mask = sgpVal.gt(0).to(device)
     maskedoutTag = torch.masked_select(outTag, mask)
     maskedsgpVal = torch.masked_select(sgpVal, mask)
     maskedweight = torch.masked_select(normedweight, mask)
     batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
     lambdaDC = ldc
+    auc = roc_auc_score(label.to("cpu").squeeze(1).numpy(), outTag.to("cpu").detach().numpy())
+    print("auc",auc)
     return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc
 
 def main():
@@ -95,6 +104,12 @@ def main():
     # Build model
     network_module = particlenet_pf
     network_options = {}
+    network_options["num_of_k_nearest"] = args.hyper.num_of_k_nearest
+    network_options["num_of_edgeConv_dim"] = args.hyper.num_of_edgeConv_dim
+    network_options["num_of_edgeConv_convLayers"] = args.hyper.num_of_edgeConv_convLayers
+    network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
+    network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes
+    network_options["fc_dropout"] = args.hyper.fc_dropout
     model = network_module.get_model(inputFeatureVars,**network_options)
     if (args.model == None):
         #model.apply(init_weights)
@@ -103,7 +118,6 @@ def main():
     else:
         print("Loading model from " + modelLocation)
     model = copy.deepcopy(model)
-    # model= nn.DataParallel(model)
     model = model.to(device)
     model.eval()
     modelLocation = "{}/{}".format(args.outf,args.model)
@@ -193,9 +207,7 @@ def main():
         # save the model
         model.eval()
         torch.save(model.state_dict(), modelLocation)
-        del dataset, sizes, train, val, test, loader_train, loader_val, loader_test
-        del train_loss_tag, train_loss_dc, train_dc_val, train_loss_total
-        del val_loss_tag, val_loss_dc, val_dc_val, val_loss_total
+        torch.cuda.empty_cache()
     # writer.close()
 
     # plot loss/epoch for training and validation sets

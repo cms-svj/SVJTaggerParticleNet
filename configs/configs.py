@@ -8,7 +8,7 @@ config_schema_dict = {
     "dataset":  ["path","signal","background","sample_fractions"],
     "features": ["uniform","weight","mT","train","spectator"],
     "training": ["size","signal_id_method","signal_weight_method","weights","algorithms"],
-    "hyper":    ["numConst","max_depth","n_estimators","subsample","learning_rate","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss","batchSize","num_of_layers_features","num_of_layers_tag","num_of_layers_pT","num_of_nodes","dropout","epochs","lambdaTag","lambdaReg","lambdaGR","lambdaDC","pTBins","n_pTBins","rseed"],
+    "hyper":    ["learning_rate","batchSize","numConst","num_of_k_nearest","num_of_edgeConv_dim","num_of_edgeConv_convLayers","num_of_fc_layers","num_of_fc_nodes","fc_dropout","epochs","lambdaTag","lambdaReg","lambdaGR","lambdaDC","pTBins","n_pTBins","rseed","max_depth","n_estimators","subsample","min_samples_leaf","fl_coefficient","power","uniform_label","n_bins","uloss"],
 }
 config_schema = make_schema(config_schema_dict)
 

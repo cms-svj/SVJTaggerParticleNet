@@ -38,17 +38,20 @@ def get_model(inputFeatureVars,**kwargs):
     #     (16, (128, 128, 128)),
     #     (16, (256, 256, 256)),
     #     ]
-    ec_k = kwargs.get('ec_k', 16)
-    ec_c1 = kwargs.get('ec_c1', 64)
-    ec_c2 = kwargs.get('ec_c2', 128)
-    ec_c3 = kwargs.get('ec_c3', 256)
-    fc_c, fc_p = kwargs.get('fc_c', 256), kwargs.get('fc_p', 0.1)
-    conv_params = [
-        (ec_k, (ec_c1, ec_c1, ec_c1)),
-        (ec_k, (ec_c2, ec_c2, ec_c2)),
-        (ec_k, (ec_c3, ec_c3, ec_c3)),
-        ]
-    fc_params = [(fc_c, fc_p)]
+    num_of_k_nearest = kwargs.get('num_of_k_nearest', 16)
+    num_of_edgeConv_dim = kwargs.get('num_of_edgeConv_dim', [64,128,256])
+    num_of_edgeConv_convLayers = kwargs.get('num_of_edgeConv_convLayers', 3)
+    num_of_fc_layers = kwargs.get('num_of_fc_layers', 1)
+    num_of_fc_nodes, fc_dropout = kwargs.get('num_of_fc_nodes', 256), kwargs.get('fc_dropout', 0.1)
+    conv_params = []
+    for ec_dim_i in num_of_edgeConv_dim:
+        conv_param = []
+        for i in range(num_of_edgeConv_convLayers):
+            conv_param.append(ec_dim_i)
+        conv_params.append([num_of_k_nearest,conv_param])
+    fc_params = []
+    for i in range(num_of_fc_layers):
+        fc_params.append([num_of_fc_nodes, fc_dropout])
     use_fusion = True
 
     pf_features_dims = len(inputFeatureVars)
