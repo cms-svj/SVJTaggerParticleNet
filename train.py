@@ -58,8 +58,7 @@ def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
     lambdaDC = ldc
     auc = roc_auc_score(label.to("cpu").squeeze(1).numpy(), outTag.to("cpu").detach().numpy())
-    print("auc",auc)
-    return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc
+    return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc, auc
 
 def main():
     rng = np.random.RandomState(2022)
@@ -138,6 +137,7 @@ def main():
     validation_losses_tag = np.zeros(hyper.epochs)
     validation_losses_dc = np.zeros(hyper.epochs)
     validation_losses_total = np.zeros(hyper.epochs)
+    aucs = []
     for epoch in range(hyper.epochs):
         dataset = udata.Subset(entireDataSet,randBalancedSet[epoch])
         sizes = get_sizes(len(dataset), dSet.sample_fractions)
@@ -155,7 +155,8 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag, batch_loss_dc, dc_val = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            batch_loss_tag, batch_loss_dc, dc_val, auc_train = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            aucs.append("auc train e-{} b-{}: {}\n".format(epoch,i,auc_train))
             batch_loss_total = batch_loss_tag # + batch_loss_dc
             batch_loss_total.backward()
             optimizer.step()
@@ -184,7 +185,8 @@ def main():
         val_dc_val = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag, output_loss_dc, dc_val = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            output_loss_tag, output_loss_dc, dc_val, auc_val = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            aucs.append("auc val e-{} b-{}: {}\n".format(epoch,i,auc_val))
             output_loss_total = output_loss_tag # + output_loss_dc
             val_loss_tag += output_loss_tag.item()
             # val_loss_dc += output_loss_dc.item()
@@ -223,6 +225,9 @@ def main():
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
     np.savez(args.outf + "/normMeanStd",normMean=entireDataSet.normMean,normStd=entireDataSet.normstd)
+    aucFile = open(args.outf + "/auc.txt", "w+")
+    aucFile.writelines(aucs)
+    aucFile.close()
     parser.write_config(args, args.outf + "/config_out.py")
 
 if __name__ == "__main__":
