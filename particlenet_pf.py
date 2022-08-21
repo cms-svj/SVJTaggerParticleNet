@@ -42,7 +42,7 @@ def get_model(inputFeatureVars,**kwargs):
     num_of_edgeConv_dim = kwargs.get('num_of_edgeConv_dim', [64,128,256])
     num_of_edgeConv_convLayers = kwargs.get('num_of_edgeConv_convLayers', 3)
     num_of_fc_layers = kwargs.get('num_of_fc_layers', 1)
-    num_of_fc_nodes, fc_dropout = kwargs.get('num_of_fc_nodes', 256), kwargs.get('fc_dropout', 0.1)
+    num_of_fc_nodes, fc_dropout = num_of_edgeConv_dim[-1], kwargs.get('fc_dropout', 0.1)
     conv_params = []
     for ec_dim_i in num_of_edgeConv_dim:
         conv_param = []
