@@ -122,8 +122,8 @@ def get_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weight, n
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
             branches = branches.dropna()
             numEvent = len(branches)
-            minNum = 5000 # 105238
-            maxMultiple = 2
+            minNum = 105238 # 105238
+            maxMultiple = 1
             maxNum = minNum * maxMultiple # using 105238 for lowest number of constituents from the training
             # if we do not limit the number of constituents we read in, the code is gonna take very long to run
             if numEvent > maxNum:
