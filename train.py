@@ -9,7 +9,7 @@ import torch.utils.data as udata
 import torch.optim as optim
 import os
 import particlenet_pf
-from dataset import RootDataset, get_sizes, splitDataSetEvenly
+from dataset import RootDataset, get_sizes
 import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
@@ -98,8 +98,12 @@ def main():
     mT = args.features.mT
     weight = args.features.weight
     numConst = args.hyper.numConst
-    entireDataSet = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight, numConst=numConst)
-    randBalancedSet = splitDataSetEvenly(entireDataSet,rng,hyper.epochs)
+    dataset = RootDataset("processedDataNPZ/processedData_nc{}.npz".format(numConst))
+    sizes = get_sizes(len(dataset), dSet.sample_fractions)
+    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+    loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
+    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
+    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
     # Build model
     network_module = particlenet_pf
     network_options = {}
@@ -139,12 +143,6 @@ def main():
     validation_losses_total = np.zeros(hyper.epochs)
     aucs = []
     for epoch in range(hyper.epochs):
-        dataset = udata.Subset(entireDataSet,randBalancedSet[epoch])
-        sizes = get_sizes(len(dataset), dSet.sample_fractions)
-        train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
-        loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
-        loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
-        loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
         print("Beginning epoch " + str(epoch))
         # training
         train_loss_tag = 0
@@ -224,7 +222,7 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    np.savez(args.outf + "/normMeanStd",normMean=entireDataSet.normMean,normStd=entireDataSet.normstd)
+    np.savez(args.outf + "/normMeanStd",normMean=dataset.normMean,normStd=dataset.normstd)
     aucFile = open(args.outf + "/auc.txt", "w+")
     aucFile.writelines(aucs)
     aucFile.close()

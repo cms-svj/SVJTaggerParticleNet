@@ -12,13 +12,13 @@ from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHel
 from configs import configs as c
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 from scipy import stats
 from scipy.spatial.distance import pdist, squareform
 from tqdm import tqdm
 import itertools
 import copy
+from GPUtil import showUtilization as gpu_usage
 
 mpl.rc("font", family="serif", size=18)
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -47,8 +47,8 @@ def collectiveKS(dataList):
         ksSum += pv
     return ksSum/len(allComs)
 
-def getNNOutput(dataset, model):
-    batchSize = 512
+def getNNOutput(dataset, model, device):
+    batchSize = 1024
     labels = np.array([])
     output_tags = np.array([])
     mcT = np.array([])
@@ -77,11 +77,9 @@ def getNNOutput(dataset, model):
         model.eval()
         inputPoints = points.float()
         inputFeatures = features.float()
-        print("size of inputPoints: {}".format(inputPoints.size()))
-        print("size of inputFeatures: {}".format(inputFeatures.size()))
         with autocast():
-            out_tag = model(inputPoints,inputFeatures)
-            output_tag = f.softmax(out_tag,dim=1)[:,1].detach().numpy()
+            out_tag = model(inputPoints.to(device),inputFeatures.to(device))
+            output_tag = f.softmax(out_tag,dim=1)[:,1].cpu().detach().numpy()
             output_tags = np.concatenate((output_tags,output_tag))
     return labels, output_tags, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
 
@@ -285,7 +283,10 @@ def main():
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
     modelLocation = "{}/{}".format(args.outf,args.model)
+    print("Model location:",modelLocation)
 
+    if not os.path.isdir(args.outf):
+        os.mkdir(args.outf)
     # Choose cpu or gpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', device)
@@ -308,20 +309,30 @@ def main():
     uniform = args.features.uniform
     mT = args.features.mT
     weight = args.features.weight
-    dataset = RootDataset(inputFolder=dSet.path, root_file=inputFiles, variables=varSet, pTBins=pTBins, uniform=uniform, mT=mT, weight=weight)
+    numConst = args.hyper.numConst
+    dataset = RootDataset("processedDataNPZ/processedData_nc{}.npz".format(numConst))
     sizes = get_sizes(len(dataset), dSet.sample_fractions)
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
     # Build model
+    # Build model
     network_module = particlenet_pf
     network_options = {}
+    network_options["num_of_k_nearest"] = args.hyper.num_of_k_nearest
+    network_options["num_of_edgeConv_dim"] = args.hyper.num_of_edgeConv_dim
+    network_options["num_of_edgeConv_convLayers"] = args.hyper.num_of_edgeConv_convLayers
+    network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
+    network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes
+    network_options["fc_dropout"] = args.hyper.fc_dropout
     model = network_module.get_model(inputFeatureVars,**network_options)
     model = copy.deepcopy(model)
     print("Loading model from file " + modelLocation)
     model.load_state_dict(torch.load(modelLocation))
     model.eval()
     model.to(device)
-    label_train, output_train_tag, mcT_train, pTLab_train, pT_train, mT_train, w_train, med_train, dark_train, rinv_train, alpha_train = getNNOutput(train, model)
-    label_test, output_test_tag, mcT_test, pTLab_test, pT_test, mT_test, w_test, med_test, dark_test, rinv_test, alpha_test = getNNOutput(test, model)
+    label_train, output_train_tag, mcT_train, pTLab_train, pT_train, mT_train, w_train, med_train, dark_train, rinv_train, alpha_train = getNNOutput(train, model, device)
+    label_test, output_test_tag, mcT_test, pTLab_test, pT_test, mT_test, w_test, med_test, dark_test, rinv_test, alpha_test = getNNOutput(test, model, device)
+    print("pT_train max:",np.amax(pT_train))
+    print("pT_test max:",np.amax(pT_test))
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
     baseline_train = mcT_train == 1
