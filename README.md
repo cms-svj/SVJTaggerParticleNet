@@ -16,6 +16,13 @@ The `-l` flag tells the setup script to build the setup from LCG. Without the fl
 So before the singularity setup code was fixed, it is probably best to use the LCG setup code for now.
 
 ## Before Training
+### Update Config File
+There are three locations where you can access the input training files depending on where you are running the training.
+This information is important for you to update the config file (`configs/C_tch_jConst.py`), so that you are able to access the input files. 
+- lxplus: `/eos/user/c/chin/SVJTrainingFiles/jetConstTrainingFiles/`
+- lpc gpu: `root://cmseos.fnal.gov//store/user/keanet/tchannel/jetConstTrainingFiles/jetConstTrainingFiles/`
+- wilson cluster: `/work1/cms_svj/keane/particleNet/jetConstTrainingFiles/`
+### Process Input Data
 Since the input data for the particleNet training have to be in a certain shape in order to run the code successfully, we need to process the training root files to get the input data in the proper shape first. Once we have processed the root files, we will get an npz file in the `processedDataNPZ` folder.
 ```
 python processData.py -C configs/C_tch_jConst.py
