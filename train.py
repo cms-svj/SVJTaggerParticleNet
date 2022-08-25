@@ -33,16 +33,16 @@ def init_weights(m):
 def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
     label, points, features, mcType, pTLab, pT, mT, w, med, dark, rinv, alpha = data
     l1, l2, lgr, ldc = lambdas
-    print("\n Initial GPU Usage")
-    gpu_usage()
+    #print("\n Initial GPU Usage")
+    #gpu_usage()
     with autocast():
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
         output = model(points.float().to(device), features.float().to(device))
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     torch.cuda.empty_cache()
-    print("\n After emptying cache")
-    gpu_usage()
+    #print("\n After emptying cache")
+    #gpu_usage()
     pTVal = pTLab.squeeze(1)
     labVal = label.squeeze(1)
 
