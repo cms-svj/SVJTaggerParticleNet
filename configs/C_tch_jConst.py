@@ -41,7 +41,7 @@ config.features.train = [
 "jCstPdgId",
 "jCstAxismajorAK8",
 "jCstAxisminorAK8",
-"jCstdoubleBDiscriminatorAK8",
+#"jCstdoubleBDiscriminatorAK8",
 "jCstTau1AK8",
 "jCstTau2AK8",
 "jCstTau3AK8",
