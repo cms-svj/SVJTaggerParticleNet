@@ -441,14 +441,6 @@ def main():
     plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=pT_train,xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN",xlim=[0,3000],weights=w_train,histBinEdge=np.arange(-30,3001,60))
     plotByBin(binVar=output_train_tag[bkgOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=pT_train[bkgOnly_train],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_bkg",xlim=[0,3000],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-30,3001,60),dfOut=dfOut)
     plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=pT_train[sigOnly_train],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_sig",xlim=[0,3000],weights=w_train[sigOnly_train],histBinEdge=np.arange(-30,3001,60))
-    # NN score per mT bin
-    plotByBin(binVar=mT_train,binVarBins = np.arange(125,3000,250),histVar=output_train_tag,xlabel="NN Score",varLab="mT",outDir=args.outf,plotName="SNNpermT",xlim=[0,1],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02))
-    plotByBin(binVar=mT_train[bkgOnly_train],binVarBins = np.arange(125,3000,250),histVar=output_train_tag[bkgOnly_train],xlabel="NN Score",varLab="mT",outDir=args.outf,plotName="SNNpermT_bkg",xlim=[0,1.02],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut)
-    plotByBin(binVar=mT_train[sigOnly_train],binVarBins = np.arange(125,3000,250),histVar=output_train_tag[sigOnly_train],xlabel="NN Score",varLab="mT",outDir=args.outf,plotName="SNNpermT_sig",xlim=[0,1.02],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02))
-    # mT per NN score bin
-    plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=mT_train,xlabel="Jet $m_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="mTperSNN",xlim=[1500,4000],weights=w_train,histBinEdge=np.arange(1475,4001,50))
-    plotByBin(binVar=output_train_tag[bkgOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=mT_train[bkgOnly_train],xlabel="Jet $m_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="mTperSNN_bkg",xlim=[1500,4000],weights=w_train[bkgOnly_train],histBinEdge=np.arange(1475,4001,50),dfOut=dfOut)
-    plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=mT_train[sigOnly_train],xlabel="Jet $m_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="mTperSNN_sig",xlim=[1500,4000],weights=w_train[sigOnly_train],histBinEdge=np.arange(1475,4001,50))
     # # NN score per rinv bin
     # plotByBin(binVar=rinv_train,binVarBins = np.arange(0.1,1,0.1),histVar=output_train_tag,xlabel="NN Score",varLab="rinv",outDir=args.outf,plotName="SNNperrinv",xlim=[0,1.02],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
     # plotByBin(binVar=rinv_train[bkgOnly_train],binVarBins = np.arange(0.1,1,0.1),histVar=output_train_tag[bkgOnly_train],xlabel="NN Score",varLab="rinv",outDir=args.outf,plotName="SNNperrinv_bkg",xlim=[0,1.02],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
@@ -458,12 +450,12 @@ def main():
     # plotByBin(binVar=output_train_tag[bkgOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=rinv_train[bkgOnly_train],xlabel="rinv",varLab="SNN",outDir=args.outf,plotName="rinvperSNN_bkg",xlim=[0,1],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-0.05,1.1,0.1))
     # plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=rinv_train[sigOnly_train],xlabel="rinv",varLab="SNN",outDir=args.outf,plotName="rinvperSNN_sig",xlim=[0,1],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.05,1.1,0.1),dfOut=dfOut)
     # NN score per mdark bin
-    print("dark_train",np.unique(dark_train))
-    plotByBin(binVar=dark_train,binVarBins = np.arange(10,111,10),histVar=output_train_tag,xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark",xlim=[0,1.02],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
-    plotByBin(binVar=dark_train[sigOnly_train],binVarBins = np.arange(10,111,10),histVar=output_train_tag[sigOnly_train],xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark_sig",xlim=[0,1.02],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut,disLab=True)
+    #print("dark_train",np.unique(dark_train))
+    #plotByBin(binVar=dark_train,binVarBins = np.arange(10,111,10),histVar=output_train_tag,xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark",xlim=[0,1.02],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
+    #plotByBin(binVar=dark_train[sigOnly_train],binVarBins = np.arange(10,111,10),histVar=output_train_tag[sigOnly_train],xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark_sig",xlim=[0,1.02],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut,disLab=True)
     # mdark per NN score bin
-    plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=dark_train,xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN",xlim=[0,120],weights=w_train,histBinEdge=np.arange(5,111,10))
-    plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=dark_train[sigOnly_train],xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN_sig",xlim=[0,120],weights=w_train[sigOnly_train],histBinEdge=np.arange(5,111,10),dfOut=dfOut)
+    #plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=dark_train,xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN",xlim=[0,120],weights=w_train,histBinEdge=np.arange(5,111,10))
+    #plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=dark_train[sigOnly_train],xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN_sig",xlim=[0,120],weights=w_train[sigOnly_train],histBinEdge=np.arange(5,111,10),dfOut=dfOut)
 
     # 2D histogram NN vs pT
     # NNvsVar2D(pT_train,output_train_tag,np.linspace(100,2000,100),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","",args.outf)
