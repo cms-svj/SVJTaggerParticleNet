@@ -63,6 +63,7 @@ Now, to run the training and validation on the lxplus condor gpu, once you are i
 ```
 condor_submit submit.sub
 ```
+You can also add `-interactive` right after `condor_submit` for an interactive session, which is useful for troubleshooting.
 Note: Making a soft link like that is a probably a bad idea. However, tarball for the entire LCG environment is huge (~1.5 GB). This is why I chose to do the former. 
 For more information about using GPU on the lxplus condor, see https://batchdocs.web.cern.ch/tutorial/exercise10.html
 ### Hyperparameters
