@@ -48,7 +48,7 @@ def collectiveKS(dataList):
     return ksSum/len(allComs)
 
 def getNNOutput(dataset, model, device):
-    batchSize = 1024
+    batchSize = 100
     labels = np.array([])
     output_tags = np.array([])
     mcT = np.array([])
