@@ -48,7 +48,7 @@ On both the lxplus and wilson cluster, you can request for `V100` GPUs which hav
 
 ### Using wilson cluster
 Once you have ssh-ed into wilson cluster, set up the environment and processed the input data.
-After that, run
+After that, to run the training interactively, run
 ```
 srun --account cms_svj --pty --constraint v100 --nodes=1 --partition gpu_gce --gres=gpu:1 bash
 ```
@@ -57,7 +57,13 @@ Now run
 ```
 source initLCG.sh
 ```
-to get the environment. After that, you can run the training and validation.
+to get the environment. After that, you can run the training and validation using the commands in the `Training and Validation` section.
+
+If you want to send a batch job instead of running interactively, you can run
+```
+sbatch wcSBatch.sh
+```
+This script assumes that you already set up the LCG environment before sending the batch job. Run `squeue` to monitor progress.
 
 ### Using lxplus condor gpu
 Before doing anything, make sure you have set up the environment and processed the input data.
