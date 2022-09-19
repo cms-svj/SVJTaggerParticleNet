@@ -8,6 +8,14 @@ import pandas as pd
 from tqdm import tqdm
 import os
 
+def pdgIDClass(idSeries):
+    possibleIDs = [-211,-13,-11,1,2,11,13,22,130,211]
+    #possibleIDs = [1,2,11,13,22,130,211]
+    #idSeries = idSeries.abs()
+    for i, iD in enumerate(possibleIDs):
+        idSeries = idSeries.replace(iD,i)
+    return idSeries
+
 def getParticleNetInputs(dataSet,signalFileIndex,numConst,pT):
     varSet = dataSet.columns.tolist()
     data = dataSet.to_numpy()
@@ -32,13 +40,17 @@ def getParticleNetInputs(dataSet,signalFileIndex,numConst,pT):
     count = 1
     signal = []
     pTs = []
-    
-    for jID in np.unique(jIDColumn):
+    jIDs, jIDCounts = np.unique(jIDColumn,return_counts=True)
+    jIDCounter = 0
+    for jIDCount in jIDCounts:
         if count % 200 == 0:
             print("Transformed {} jets".format(count))
         count += 1
-        sameJetConstData = data[jIDColumn == jID] # getting values for constituents in the same jet
-        pTs.append(float(pT[jIDColumn == jID].iloc[0]))
+        sInd = jIDCounter
+        eInd = jIDCounter+jIDCount
+        jIDCounter = eInd
+        sameJetConstData = data[sInd:eInd] # getting values for constituents in the same jet
+        pTs.append(float(pT[sInd:eInd].iloc[0]))
         if sameJetConstData[0][inFileIndex] in signalFileIndex:
             signal.append([0, 1])
         else:
@@ -56,7 +68,7 @@ def getParticleNetInputs(dataSet,signalFileIndex,numConst,pT):
                 eachJetFeatures.append(paddedJetConstData[i])
         inputPoints.append(eachJetPoints)
         inputFeatures.append(eachJetFeatures)
-        inputFileIndices.append(inFileColumn[jIDColumn == jID][0])
+        inputFileIndices.append(inFileColumn[sInd:eInd][0])
     inputPoints = np.array(inputPoints)
     inputFeatures = np.array(inputFeatures)
     print("There are {} labels.".format(len(signal)))
@@ -83,6 +95,8 @@ def getPara(fileName,paraName,paraList,branches,key):
                 paravalue = 2
             elif paravalue == "high":
                 paravalue = 3
+        elif paraName == "rinv":
+            paravalue = float(paravalue.replace("p","."))
         else:
             paravalue = float(paravalue)
     paraList += [paravalue]*len(branches)
@@ -106,6 +120,7 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
     alphas = []
     weights = []
     fileIndex = 0
+    inputFileNames = []
     signalFileIndex = []
     for key,fileList in samples.items():
         nsigfiles = len(samples["signal"])
@@ -119,8 +134,8 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
                 signalFileIndex.append(fileIndex)
                 jetCatBranch = ftree.arrays("jCsthvCategory",library="pd")
                 darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 5) | (jetCatBranch["jCsthvCategory"] == 9))
-                # print(jetCatBranch['jCsthvCategory'].value_counts())
                 branches = branches[darkCon]
+            inputFileNames.append(fileName)
             branches["inputFile"] = [fileIndex]*len(branches) # record name of the input file, important for distinguishing which jet the constituents belong to
             fileIndex += 1
             branches.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -128,9 +143,9 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
             numEvent = len(branches)
             # if we do not limit the number of constituents we read in, the code is gonna take very long to run
             if key == "signal":
-                numEvent = 105238#105238
+                numEvent = 500000#105238,500000
             else:
-                numEvent = 150000#150000
+                numEvent = 750000#150000,750000
             branches = branches.head(numEvent)
             print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
@@ -170,15 +185,19 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
     alpha = np.array(alphas)
     dataSet = pd.concat(dSets)
     jetIdentifier(dataSet)
+    dataSet.sort_values("jID",inplace=True)
     pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
+    #dataSet["jCstPdgId"] = pdgIDClass(dataSet["jCstPdgId"])
     print("dataSet.head()")
     print("dataSet length",len(dataSet))
+    print("dataSet jCstPdgId",np.unique(dataSet["jCstPdgId"]))
     print("pT length",len(pT))
     print(dataSet.head())
     print("The number of constituents in each input training file:")
     print(dataSet["inputFile"].value_counts())
+    
     dfmean = dataSet.mean()
     dfstd = dataSet.std()
     dataSet["jCstEta_Norm"] = dataSet["jCstEta"]
@@ -187,11 +206,20 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
     dataSet[columns_to_normalize] = normalize(dataSet[columns_to_normalize])
     inputPoints, inputFeatures, signal, inputFileIndices, pT = getParticleNetInputs(dataSet,signalFileIndex,numConst,pT)
     sigLabel = np.array(signal)[:,1]
-    print("Total number of pT",len(pT))
-    print("The total number of jets: {}".format(len(sigLabel)))
-    print("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
-    print("Total number of background jets: {}".format(len(sigLabel[sigLabel==0])))
-    
+    outputFolder = "processedDataNPZ"
+    outputNPZFileName = "processedData_nc{}".format(numConst)
+    dataInfo = []
+    dataInfo.append("The total number of jets: {}".format(len(sigLabel)))
+    dataInfo.append("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
+    dataInfo.append("Total number of background jets: {}".format(len(sigLabel[sigLabel==0])))
+    dataInfo.append("The number of jets from each file:")
+    inFileInds,inFileCounts = np.unique(inputFileIndices,return_counts=True)
+    for i in inFileInds:
+        inFileCount = inFileCounts[int(i)]
+        dataInfo.append("{}:{} jets".format(np.array(inputFileNames)[int(i)],inFileCount))
+    with open('{}/{}_dataInfo.txt'.format(outputFolder,outputNPZFileName), 'w') as f:
+        for line in dataInfo:
+            f.write("{}\n".format(line))
     dictOut = {
         "inputPoints":inputPoints,
         "inputFeatures":inputFeatures,
@@ -211,7 +239,7 @@ def process_all_vars(inputFolder, samples, variables, pTBins, uniform, mT, weigh
         "signalFileIndex":signalFileIndex
     }
 
-    np.savez_compressed("processedDataNPZ/processedData_nc{}.npz".format(numConst),**dictOut)
+    np.savez_compressed("{}/{}.npz".format(outputFolder,outputNPZFileName),**dictOut)
 
 if __name__=="__main__":
     # parse arguments
