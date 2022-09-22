@@ -30,15 +30,18 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight)
         m.bias.data.fill_(0.01)
 
-def processBatch(args, device, varSet, data, model, criterion, lambdas, epoch):
-    label, points, features, mcType, pTLab, pT, mT, w, med, dark, rinv, alpha = data
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def processBatch(args, device, data, model, criterion, lambdas, epoch):
+    label, points, features, jetFeatures, mcType, pTLab, pT, mT, w, med, dark, rinv, alpha = data
     l1, l2, lgr, ldc = lambdas
     #print("\n Initial GPU Usage")
     #gpu_usage()
     with autocast():
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
-        output = model(points.float().to(device), features.float().to(device))
+        output = model(points.float().to(device), features.float().to(device), jetFeatures.float().to(device))
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     torch.cuda.empty_cache()
     #print("\n After emptying cache")
@@ -90,9 +93,11 @@ def main():
     hyper = args.hyper
     inputFiles.update(sigFiles)
     print(inputFiles)
-    varSet = args.features.train
-    inputFeatureVars = [var for var in varSet if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
-    print("Input feature variables:",inputFeatureVars)
+    varSetjetConst = args.features.jetConst
+    inputFeatureVars = [var for var in varSetjetConst if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
+    print("Input jet constituent features:",inputFeatureVars)
+    varSetjetVariables = args.features.jetVariables
+    print("Input jet features:",varSetjetVariables)
     pTBins = hyper.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
@@ -111,9 +116,9 @@ def main():
     network_options["num_of_edgeConv_dim"] = args.hyper.num_of_edgeConv_dim
     network_options["num_of_edgeConv_convLayers"] = args.hyper.num_of_edgeConv_convLayers
     network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
-    network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes
+    network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes 
     network_options["fc_dropout"] = args.hyper.fc_dropout
-    model = network_module.get_model(inputFeatureVars,**network_options)
+    model = network_module.get_model(inputFeatureVars,len(varSetjetVariables),**network_options)
     if (args.model == None):
         #model.apply(init_weights)
         print("Creating new model ")
@@ -124,7 +129,11 @@ def main():
     model = model.to(device)
     model.eval()
     modelLocation = "{}/{}".format(args.outf,args.model)
-
+    modelInfo = []
+    modelInfo.append("Model contains {} trainable parameters.".format(count_parameters(model)))
+    with open('{}/modelInfo.txt'.format(args.outf), 'w') as f:
+        for line in modelInfo:
+            f.write("{}\n".format(line))
     # Loss function
     criterion = nn.CrossEntropyLoss()
     criterion.to(device=device)
@@ -153,7 +162,7 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag, batch_loss_dc, dc_val, auc_train = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            batch_loss_tag, batch_loss_dc, dc_val, auc_train = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             aucs.append("auc train e-{} b-{}: {}\n".format(epoch,i,auc_train))
             batch_loss_total = batch_loss_tag # + batch_loss_dc
             batch_loss_total.backward()
@@ -183,7 +192,7 @@ def main():
         val_dc_val = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag, output_loss_dc, dc_val, auc_val = processBatch(args, device, varSet, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            output_loss_tag, output_loss_dc, dc_val, auc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             aucs.append("auc val e-{} b-{}: {}\n".format(epoch,i,auc_val))
             output_loss_total = output_loss_tag # + output_loss_dc
             val_loss_tag += output_loss_tag.item()
@@ -214,15 +223,14 @@ def main():
     print("Making basic validation plots")
     training_tag = plt.plot(training_losses_tag, label='training_tag')
     validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
-    training_dc = plt.plot(training_losses_dc, label='training_dc')
-    validation_dc = plt.plot(validation_losses_dc, label='validation_dc')
+    #training_dc = plt.plot(training_losses_dc, label='training_dc')
+    #validation_dc = plt.plot(validation_losses_dc, label='validation_dc')
     training_total = plt.plot(training_losses_total, label='training_total')
     validation_total = plt.plot(validation_losses_total, label='validation_total')
     plt.xlabel("epoch")
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    np.savez(args.outf + "/normMeanStd",normMean=dataset.normMean,normStd=dataset.normstd)
     aucFile = open(args.outf + "/auc.txt", "w+")
     aucFile.writelines(aucs)
     aucFile.close()

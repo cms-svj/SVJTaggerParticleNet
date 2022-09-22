@@ -61,6 +61,7 @@ class RootDataset(udata.Dataset):
         pData = np.load(processedFile)
         inputPoints = pData["inputPoints"]
         inputFeatures = pData["inputFeatures"]
+        inputJetFeatures = pData["inputJetFeatures"]
         signal = pData["signal"]
         mcType = pData["mcType"]
         pTLab = pData["pTLab"]
@@ -71,13 +72,12 @@ class RootDataset(udata.Dataset):
         mDarks = pData["mDark"]
         rinvs = pData["rinv"]
         alphas = pData["alpha"]
-        dfmean = pData["dfmean"]
-        dfstd = pData["dfstd"]
         inputFileIndex = pData["inputFileIndices"]
         signalFileIndex = pData["signalFileIndex"]
         # self.vars = dataSet.astype(float).values
         self.points = inputPoints
         self.features = inputFeatures
+        self.jetFeatures = inputJetFeatures
         self.signal = signal
         self.mcType = mcType
         self.pTLab = pTLab
@@ -88,8 +88,6 @@ class RootDataset(udata.Dataset):
         self.mDarks = mDarks
         self.rinvs = rinvs
         self.alphas = alphas
-        self.normMean = np.array(dfmean)
-        self.normstd = np.array(dfstd)
         self.inputFileIndex = np.array(inputFileIndex)
         self.signalFileIndex = np.array(signalFileIndex)
         print("Number of events:", len(self.signal))
@@ -103,6 +101,7 @@ class RootDataset(udata.Dataset):
     def __getitem__(self, idx):
         points_np = self.points[idx].copy()
         features_np = self.features[idx].copy()
+        jetFeatures_np = self.jetFeatures[idx].copy()
         label_np = np.zeros(1, dtype=np.compat.long).copy()
         mcType_np = np.array([np.compat.long(self.mcType[idx])]).copy()
         pTLab_np = np.array([np.compat.long(self.pTLab[idx])]).copy()
@@ -119,6 +118,7 @@ class RootDataset(udata.Dataset):
 
         points  = torch.from_numpy(points_np)
         features  = torch.from_numpy(features_np)
+        jetFeatures  = torch.from_numpy(jetFeatures_np)
         # print("Data inside getitem")
         # print(data)
         label = torch.from_numpy(label_np)
@@ -131,7 +131,7 @@ class RootDataset(udata.Dataset):
         mDarks = torch.from_numpy(mDarks_np).float()
         rinvs = torch.from_numpy(rinvs_np).float()
         alphas = torch.from_numpy(alphas_np)
-        return label, points, features, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas
+        return label, points, features, jetFeatures, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas
 
 if __name__=="__main__":
     # parse arguments
@@ -144,8 +144,11 @@ if __name__=="__main__":
     inputFiles = dSet.background
     inputFiles.update(sigFiles)
     print(inputFiles)
-    varSet = args.features.train
-    print(varSet)
+    varSetjetConst = args.features.jetConst
+    inputFeatureVars = [var for var in varSetjetConst if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
+    print("Input jet constituent features:",inputFeatureVars)
+    varSetjetVariables = args.features.jetVariables
+    print("Input jet features:",varSetjetVariables)
     pTBins = args.hyper.pTBins
     print(pTBins)
     uniform = args.features.uniform
@@ -157,7 +160,7 @@ if __name__=="__main__":
     train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(1000))
     print("train.__len__()",train.__len__())
     loader = udata.DataLoader(dataset=train, batch_size=train.__len__(), num_workers=0)
-    l, po, fea, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
+    l, po, fea, jfea, mct, pl, p, m, w, med, dark, rinv, alpha = next(iter(loader))
     labels = l.squeeze(1).numpy()
     mcType = mct.squeeze(1).numpy()
     pTLab = pl.squeeze(1).numpy()

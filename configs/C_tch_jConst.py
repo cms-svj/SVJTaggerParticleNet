@@ -1,69 +1,79 @@
 from magiconfig import MagiConfig
 
 config = MagiConfig(dataset=MagiConfig(), features=MagiConfig(), training=MagiConfig(), hyper=MagiConfig())
-config.dataset.path = "/work1/cms_svj/keane/particleNet/jetConstTrainingFiles/"
+config.dataset.path = "/work1/cms_svj/keane/trainingFiles/PNTrainingFiles/"
 allsigs = [
-"tree_SVJ_mMed-1000_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-1500_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-100_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-1_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-20_rinv-0.1_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-20_rinv-0.5_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-20_rinv-0.7_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-2000_mDark-50_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-3000_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-4000_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-600_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018",
-"tree_SVJ_mMed-800_mDark-20_rinv-0.3_alpha-peak_yukawa-1_MC2018"
+"tree_SVJ_mMed-1000_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-1500_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-100_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-1_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-20_rinv-0p1_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-20_rinv-0p5_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-20_rinv-0p7_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-2000_mDark-50_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-3000_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-4000_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-600_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN",
+"tree_SVJ_mMed-800_mDark-20_rinv-0p3_alpha-peak_yukawa-1_PN"
 ]
 config.dataset.signal = {"signal": list(sorted(set(allsigs)))}
 config.dataset.background =  {"background": [
-"tree_QCD_Pt_300to470_MC2018",
-"tree_QCD_Pt_470to600_MC2018",
-"tree_QCD_Pt_600to800_MC2018",
-"tree_QCD_Pt_800to1000_MC2018",
-"tree_QCD_Pt_1000to1400_MC2018",
-"tree_QCD_Pt_1400to1800_MC2018",
-"tree_QCD_Pt_1800to2400_MC2018",
-"tree_QCD_Pt_2400to3200_MC2018",
-"tree_QCD_Pt_3200toInf_MC2018",
+"tree_QCD_Pt_300to470_PN",
+"tree_QCD_Pt_470to600_PN",
+"tree_QCD_Pt_600to800_PN",
+"tree_QCD_Pt_800to1000_PN",
+"tree_QCD_Pt_1000to1400_PN",
+"tree_QCD_Pt_1400to1800_PN",
+"tree_QCD_Pt_1800to2400_PN",
+"tree_QCD_Pt_2400to3200_PN",
+"tree_QCD_Pt_3200toInf_PN",
+"tree_TTJets_DiLept_genMET-150_PN",
+"tree_TTJets_DiLept_PN",
+"tree_TTJets_HT-1200to2500_PN",
+"tree_TTJets_HT-2500toInf_PN",
+"tree_TTJets_HT-600to800_PN",
+"tree_TTJets_HT-800to1200_PN",
+"tree_TTJets_Incl_PN",
+"tree_TTJets_SingleLeptFromTbar_genMET-150_PN",
+"tree_TTJets_SingleLeptFromTbar_PN",
+"tree_TTJets_SingleLeptFromT_genMET-150_PN",
+"tree_TTJets_SingleLeptFromT_PN"
 ]}
 config.dataset.sample_fractions = [0.70, 0.15, 0.15]
 config.features.uniform = "jCstPtAK8"
 config.features.weight = "jCstWeightAK8"
 config.features.mT = "jCstPtAK8"
-config.features.train = [
+config.features.jetConst = [
 "jCstPt",
 "jCstEta",
 "jCstPhi",
 "jCstEnergy",
 "jCstPdgId",
-"jCstAxismajorAK8",
-"jCstAxisminorAK8",
-#"jCstdoubleBDiscriminatorAK8",
-"jCstTau1AK8",
-"jCstTau2AK8",
-"jCstTau3AK8",
-# "jCstNumBhadronsAK8",
-# "jCstNumChadronsAK8",
-"jCstPtDAK8",
-"jCstSoftDropMassAK8",
 "jCsthvCategory",
 "jCstEvtNum",
 "jCstJNum"
+]
+config.features.jetVariables = [
+"jCstAxismajorAK8",
+"jCstAxisminorAK8",
+"jCstTau1AK8",
+"jCstTau2AK8",
+"jCstTau3AK8",
+"jCstPtDAK8",
+"jCstSoftDropMassAK8"
 ]
 # particleNet hyperparameters
 config.hyper.learning_rate = 0.001
 config.hyper.batchSize = 512
 config.hyper.numConst = 100
 config.hyper.num_of_k_nearest = 16
-config.hyper.num_of_edgeConv_dim = [64,128,256]
-config.hyper.num_of_edgeConv_convLayers = 3
-config.hyper.num_of_fc_layers = 1
+config.hyper.num_of_edgeConv_dim = [64,128]
+config.hyper.num_of_edgeConv_convLayers = 2
+config.hyper.num_of_fc_layers = 5
 config.hyper.num_of_fc_nodes = 256
-config.hyper.fc_dropout = 0.1
-config.hyper.epochs = 50
+config.hyper.fc_dropout = 0.3
+config.hyper.epochs = 80
 config.hyper.lambdaTag = 1.0
 config.hyper.lambdaReg = 0.0
 config.hyper.lambdaGR = 1.0 # keep this at 1 and change lambdaReg only

@@ -62,8 +62,7 @@ def getNNOutput(dataset, model, device):
     alphas = np.array([])
     loader = udata.DataLoader(dataset=dataset, batch_size=batchSize, num_workers=0)
     for i, data in tqdm(enumerate(loader), unit="batch", total=len(loader)):
-        print("\nLoading batch {}".format(i+1))
-        l, points, features, mct, pl, p, m, w, med, dark, rinv, alpha = data
+        l, points, features, jetFeatures, mct, pl, p, m, w, med, dark, rinv, alpha = data
         labels = np.concatenate((labels,l.squeeze(1).numpy()))
         mcT = np.concatenate((mcT,mct.squeeze(1).numpy()))
         pTL = np.concatenate((pTL,pl.squeeze(1).float().numpy()))
@@ -77,8 +76,9 @@ def getNNOutput(dataset, model, device):
         model.eval()
         inputPoints = points.float()
         inputFeatures = features.float()
+        inputJetFeatures = jetFeatures.float()
         with autocast():
-            out_tag = model(inputPoints.to(device),inputFeatures.to(device))
+            out_tag = model(inputPoints.to(device),inputFeatures.to(device),inputJetFeatures.to(device))
             output_tag = f.softmax(out_tag,dim=1)[:,1].cpu().detach().numpy()
             output_tags = np.concatenate((output_tags,output_tag))
     return labels, output_tags, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
@@ -302,9 +302,11 @@ def main():
     inputFiles = dSet.background
     hyper = args.hyper
     inputFiles.update(sigFiles)
-    varSet = args.features.train
-    inputFeatureVars = [var for var in varSet if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
-    print("Input feature variables:",inputFeatureVars)
+    varSetjetConst = args.features.jetConst
+    inputFeatureVars = [var for var in varSetjetConst if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
+    print("Input jet constituent features:",inputFeatureVars)
+    varSetjetVariables = args.features.jetVariables
+    print("Input jet features:",varSetjetVariables)
     pTBins = hyper.pTBins
     uniform = args.features.uniform
     mT = args.features.mT
@@ -323,7 +325,7 @@ def main():
     network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
     network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes
     network_options["fc_dropout"] = args.hyper.fc_dropout
-    model = network_module.get_model(inputFeatureVars,**network_options)
+    model = network_module.get_model(inputFeatureVars,len(varSetjetVariables),**network_options)
     model = copy.deepcopy(model)
     print("Loading model from file " + modelLocation)
     model.load_state_dict(torch.load(modelLocation))

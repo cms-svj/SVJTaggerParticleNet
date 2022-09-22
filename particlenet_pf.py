@@ -7,6 +7,7 @@ class ParticleNetTagger1Path(nn.Module):
 
     def __init__(self,
                  pf_features_dims,
+                 jet_features_dim,
                  num_classes,
                  conv_params=[(7, (32, 32, 32)), (7, (64, 64, 64))],
                  fc_params=[(128, 0.1)],
@@ -20,6 +21,7 @@ class ParticleNetTagger1Path(nn.Module):
         self.pf_input_dropout = nn.Dropout(pf_input_dropout) if pf_input_dropout else None
         self.pf_conv = FeatureConv(pf_features_dims, 32)
         self.pn = ParticleNet(input_dims=32,
+                              jet_features_dim=jet_features_dim,
                               num_classes=num_classes,
                               conv_params=conv_params,
                               fc_params=fc_params,
@@ -28,11 +30,11 @@ class ParticleNetTagger1Path(nn.Module):
                               use_counts=use_counts,
                               for_inference=for_inference)
 
-    def forward(self, pf_points, pf_features):
-        return self.pn(pf_points, self.pf_conv(pf_features))
+    def forward(self, pf_points, pf_features, jetFeatures):
+        return self.pn(pf_points, self.pf_conv(pf_features), jetFeatures)
 
 
-def get_model(inputFeatureVars,**kwargs):
+def get_model(inputFeatureVars,jet_features_dim,**kwargs):
     # conv_params = [
     #     (16, (64, 64, 64)),
     #     (16, (128, 128, 128)),
@@ -42,7 +44,7 @@ def get_model(inputFeatureVars,**kwargs):
     num_of_edgeConv_dim = kwargs.get('num_of_edgeConv_dim', [64,128,256])
     num_of_edgeConv_convLayers = kwargs.get('num_of_edgeConv_convLayers', 3)
     num_of_fc_layers = kwargs.get('num_of_fc_layers', 1)
-    num_of_fc_nodes, fc_dropout = num_of_edgeConv_dim[-1], kwargs.get('fc_dropout', 0.1)
+    num_of_fc_nodes, fc_dropout = kwargs.get('num_of_fc_nodes', 128), kwargs.get('fc_dropout', 0.1)
     conv_params = []
     for ec_dim_i in num_of_edgeConv_dim:
         conv_param = []
@@ -56,7 +58,7 @@ def get_model(inputFeatureVars,**kwargs):
 
     pf_features_dims = len(inputFeatureVars)
     num_classes = 2 # need to make this smarter, not hardcoded
-    model = ParticleNetTagger1Path(pf_features_dims, num_classes,
+    model = ParticleNetTagger1Path(pf_features_dims, jet_features_dim, num_classes,
                                    conv_params, fc_params,
                                    use_fusion=use_fusion,
                                    use_fts_bn=kwargs.get('use_fts_bn', False),
