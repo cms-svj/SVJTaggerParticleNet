@@ -16,7 +16,7 @@ def pdgIDClass(idSeries):
         idSeries = idSeries.replace(iD,i)
     return idSeries
 
-def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT):
+def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight):
     varSet = dataSet.columns.tolist()
     data = dataSet.to_numpy()
     evtNumIndex = varSet.index("jCstEvtNum")
@@ -39,6 +39,7 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT):
     count = 1
     signal = []
     pTs = []
+    weights = []
     jIDs, jIDCounts = np.unique(jIDColumn,return_counts=True)
     jIDCounter = 0
     # looping over jets
@@ -51,6 +52,7 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT):
         jIDCounter = eInd
         sameJetConstData = data[sInd:eInd] # getting values for constituents in the same jet
         pTs.append(float(pT[sInd:eInd].iloc[0]))
+        weights.append(float(weight[sInd:eInd].iloc[0]))
         if sameJetConstData[0][inFileIndex] in signalFileIndex:
             signal.append([0, 1])
         else:
@@ -80,7 +82,7 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT):
     print("There are {} labels.".format(len(signal)))
     print(inputPoints.shape)
     print(inputFeatures.shape)
-    return inputPoints, inputFeatures, inputJetFeatures, signal, inputFileIndices, pTs
+    return inputPoints, inputFeatures, inputJetFeatures, signal, inputFileIndices, pTs, weights
 
 def getBranch(ftree,variable,branches,branchList):
     branch = ftree.arrays(variable,library="pd")
@@ -196,6 +198,8 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
     pT = pd.concat(pTs)
     mT = pd.concat(mTs)
     weight = pd.concat(weights)
+    print("weight")
+    print(np.unique(weight))
     #dataSet["jCstPdgId"] = pdgIDClass(dataSet["jCstPdgId"])
     print(dataSet.head())
     print("The number of constituents in each input training file:")
@@ -212,7 +216,7 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
     print("Order of variables:")
     for var in dataSet.columns:
         print(var)
-    inputPoints, inputFeatures, inputJetFeatures_unNormalized, signal, inputFileIndices, pT = getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT)
+    inputPoints, inputFeatures, inputJetFeatures_unNormalized, signal, inputFileIndices, pT, weight = getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight)
     sigLabel = np.array(signal)[:,1]
     outputFolder = "processedDataNPZ"
     outputNPZFileName = "processedData_nc{}".format(numConst)
@@ -256,6 +260,8 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
         "jMean":jMean,
         "jStd":jStd,
     }
+    print("pT",len(pT))
+    print("weight",len(weight))
     print("jet constituent variables that are normalized",columns_to_normalize)
     print("jet variables that are normalized",jetFeat)
     print("inputPoints",inputPoints.shape)

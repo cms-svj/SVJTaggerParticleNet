@@ -107,7 +107,7 @@ class RootDataset(udata.Dataset):
         pTLab_np = np.array([np.compat.long(self.pTLab[idx])]).copy()
         pTs_np = np.array([self.pTs[idx]]).copy()
         mTs_np = self.mTs[idx].copy()
-        weights_np = self.weights[idx].copy()
+        weights_np = np.array([self.weights[idx]]).copy()
         mMeds_np = np.array([self.mMeds[idx]]).copy()
         mDarks_np = np.array([self.mDarks[idx]]).copy()
         rinvs_np = np.array([self.rinvs[idx]]).copy()
