@@ -85,7 +85,7 @@ def getNNOutput(dataset, model, device):
 
 def getROCStuff(label, output, weights=None):
     fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
-    auc = roc_auc_score(label, output)
+    auc = roc_auc_score(label, output, sample_weight=weights)
     return fpr, tpr, auc
 
 def getSgBgOutputs(label, output, weights):
