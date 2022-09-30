@@ -112,10 +112,8 @@ class RootDataset(udata.Dataset):
         mDarks_np = np.array([self.mDarks[idx]]).copy()
         rinvs_np = np.array([self.rinvs[idx]]).copy()
         alphas_np = np.array([np.compat.long(self.alphas[idx])]).copy()
-
-        if self.signal[idx][1]:
-            label_np += 1
-
+        label_np += np.where(self.signal[idx] == 1)[0][0] #Calculates label 
+        
         points  = torch.from_numpy(points_np)
         features  = torch.from_numpy(features_np)
         jetFeatures  = torch.from_numpy(jetFeatures_np)
@@ -131,6 +129,7 @@ class RootDataset(udata.Dataset):
         mDarks = torch.from_numpy(mDarks_np).float()
         rinvs = torch.from_numpy(rinvs_np).float()
         alphas = torch.from_numpy(alphas_np)
+
         return label, points, features, jetFeatures, mcType, pTLab, pTs, mTs, weights, mMeds, mDarks, rinvs, alphas
 
 if __name__=="__main__":

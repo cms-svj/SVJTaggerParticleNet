@@ -50,17 +50,20 @@ def processBatch(args, device, data, model, criterion, lambdas, epoch):
     labVal = label.squeeze(1)
 
     # Added distance correlation calculation between tagger output and jet pT
-    outTag = f.softmax(output,dim=1)[:,1]
+    outSoftmax = f.softmax(output,dim=1)
+    signalIndex = args.hyper.num_classes - 1
+    outTag = outSoftmax[:,signalIndex]
     normedweight = torch.ones_like(outTag)
     # disco signal parameter
     sgpVal = pT.squeeze(1).to(device)
-    mask = sgpVal.gt(0).to(device)
+    mask = sgpVal.gt(signalIndex-1).to(device)
     maskedoutTag = torch.masked_select(outTag, mask)
     maskedsgpVal = torch.masked_select(sgpVal, mask)
     maskedweight = torch.masked_select(normedweight, mask)
     batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
     lambdaDC = ldc
-    auc = roc_auc_score(label.to("cpu").squeeze(1).numpy(), outTag.to("cpu").detach().numpy())
+    auc = 1.0#roc_auc_score(label.to("cpu").squeeze(1).numpy(), outSoftmax.to("cpu").detach().numpy(), multi_class='ovr')
+    #print(auc)
     return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc, auc
 
 def main():
@@ -118,6 +121,7 @@ def main():
     network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
     network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes 
     network_options["fc_dropout"] = args.hyper.fc_dropout
+    network_options["num_classes"] = args.hyper.num_classes
     model = network_module.get_model(inputFeatureVars,len(varSetjetVariables),**network_options)
     if (args.model == None):
         #model.apply(init_weights)
