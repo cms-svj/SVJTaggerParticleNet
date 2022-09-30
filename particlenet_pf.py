@@ -57,7 +57,7 @@ def get_model(inputFeatureVars,jet_features_dim,**kwargs):
     use_fusion = True
 
     pf_features_dims = len(inputFeatureVars)
-    num_classes = 2 # need to make this smarter, not hardcoded
+    num_classes = kwargs.get('num_classes', 2)
     model = ParticleNetTagger1Path(pf_features_dims, jet_features_dim, num_classes,
                                    conv_params, fc_params,
                                    use_fusion=use_fusion,

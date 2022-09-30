@@ -47,10 +47,12 @@ def collectiveKS(dataList):
         ksSum += pv
     return ksSum/len(allComs)
 
-def getNNOutput(dataset, model, device):
+def getNNOutput(dataset, model, device, signalIndex=2):
     batchSize = 100
     labels = np.array([])
+    binaryLabels = np.array([])
     output_tags = np.array([])
+    binaryOutputs = np.array([])
     mcT = np.array([])
     pTL = np.array([])
     pT = np.array([])
@@ -79,9 +81,17 @@ def getNNOutput(dataset, model, device):
         inputJetFeatures = jetFeatures.float()
         with autocast():
             out_tag = model(inputPoints.to(device),inputFeatures.to(device),inputJetFeatures.to(device))
-            output_tag = f.softmax(out_tag,dim=1)[:,1].cpu().detach().numpy()
+            outSoftmax = f.softmax(out_tag,dim=1)
+
+            binaryOutput = outSoftmax[:,signalIndex].cpu().detach().numpy()
+            binaryOutputs = np.concatenate((binaryOutputs,binaryOutput))
+            binaryLabel = (l.squeeze(1).numpy()==signalIndex).astype(int)
+            binaryLabels = np.concatenate((binaryLabels,binaryLabel))
+
+            output_tag = outSoftmax[:,signalIndex].cpu().detach().numpy()
             output_tags = np.concatenate((output_tags,output_tag))
-    return labels, output_tags, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
+
+    return binaryLabels, binaryOutputs, mcT, pTL, pT, mT, weight, meds, darks, rinvs, alphas
 
 def getROCStuff(label, output, weights=None):
     fpr, tpr, thresholds = roc_curve(label, output, sample_weight=weights)
@@ -150,7 +160,7 @@ def plotSignificance(cutBins,plotBinEdge,var_train,w_train,mcT_train,output_trai
     # plt.ylim(0,np.nanmax(eff)*1.1)
     plt.ylabel("FOM ( sqrt(2((S+B)*log(1+S/B)-S)) )")
     plt.xlabel('{} (GeV)'.format(varLabel))
-    plt.savefig(outf + "/significance_{}.pdf".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outf + "/significance_{}.png".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
     plt.figure(figsize=(12, 8))
     bkgOnly_train = tagLabel == 0
     sigOnly_train = np.logical_not(bkgOnly_train)
@@ -159,7 +169,7 @@ def plotSignificance(cutBins,plotBinEdge,var_train,w_train,mcT_train,output_trai
     plt.ylabel("Event")
     plt.xlabel('{} (GeV)'.format(varLabel))
     plt.legend()
-    plt.savefig(outf + "/sigVsBkg_{}.pdf".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outf + "/sigVsBkg_{}.png".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
 
 def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,outf,dfOut=None,sig=True):
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -178,11 +188,11 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
             output_pTC_wpt = np.where(output_pTC>wpt,1,0)
             if sig:
                 ylabel = "Signal Efficiency"
-                plotname = outf + "/sigEffVs{}.pdf".format(varLabel)
+                plotname = outf + "/sigEffVs{}.png".format(varLabel)
                 totalCount = label_pTC
             else:
                 ylabel = "Mistag Rate"
-                plotname = outf + "/mistagVs{}.pdf".format(varLabel)
+                plotname = outf + "/mistagVs{}.png".format(varLabel)
                 totalCount = label_pTC + 1
             weighted_num = np.sum(np.multiply(output_pTC_wpt,weights_pTC))
             weighted_den = np.sum(np.multiply(totalCount,weights_pTC))
@@ -201,11 +211,11 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
     plt.grid()
     if sig:
         ylabel = "Signal Efficiency"
-        plotname = outf + "/sigEffVs{}.pdf".format(varLabel)
+        plotname = outf + "/sigEffVs{}.png".format(varLabel)
         plt.ylim(0,1.0)
     else:
         ylabel = "Mistag Rate"
-        plotname = outf + "/mistagVs{}.pdf".format(varLabel)
+        plotname = outf + "/mistagVs{}.png".format(varLabel)
         plt.ylim(0,0.4)
     # plt.ylim(0,np.nanmax(eff)*1.1)
     ax.set_ylabel(ylabel)
@@ -250,10 +260,10 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,disLa
     ax.set_xlabel(xlabel)
     plt.legend()
     plt.xlim(xlim[0],xlim[1])
-    plt.savefig(outDir + "/{}.pdf".format(plotName), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outDir + "/{}.png".format(plotName), dpi=fig.dpi, bbox_inches="tight")
     plt.yscale("log")
     # plt.ylim(0.0001,0.2)
-    plt.savefig(outDir + "/{}_log.pdf".format(plotName), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outDir + "/{}_log.png".format(plotName), dpi=fig.dpi, bbox_inches="tight")
 
 def NNvsVar2D(var_train,output_train_tag,var_range,tag_range,xlabel,plotType,outDir,dfOut=None):
     plt.figure(figsize=(12, 8))
@@ -271,7 +281,7 @@ def NNvsVar2D(var_train,output_train_tag,var_range,tag_range,xlabel,plotType,out
     plt.xlabel(xlabel)
     plt.ylabel("NN Score")
     plt.colorbar()
-    plt.savefig(outDir + "/2D_NNvs{}_{}.pdf".format(varLabel,plotType), bbox_inches="tight")
+    plt.savefig(outDir + "/2D_NNvs{}_{}.png".format(varLabel,plotType), bbox_inches="tight")
 
 def main():
     # parse arguments
@@ -325,6 +335,7 @@ def main():
     network_options["num_of_fc_layers"] = args.hyper.num_of_fc_layers
     network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes
     network_options["fc_dropout"] = args.hyper.fc_dropout
+    network_options["num_classes"] = args.hyper.num_classes
     model = network_module.get_model(inputFeatureVars,len(varSetjetVariables),**network_options)
     model = copy.deepcopy(model)
     print("Loading model from file " + modelLocation)
@@ -361,7 +372,7 @@ def main():
     #     left, right = ax.get_xlim()
     #     ax.set_ylim(bottom + 0.5, top - 0.5)
     #     ax.set_xlim(left - 0.5, right + 0.5)
-    #     plt.savefig(args.outf + "/corrHeatMap.pdf", dpi=fig.dpi, bbox_inches="tight")
+    #     plt.savefig(args.outf + "/corrHeatMap.png", dpi=fig.dpi, bbox_inches="tight")
     #     fig, ax = plt.subplots(figsize=(12, 8))
     #
     #     # plot input variable
@@ -381,7 +392,7 @@ def main():
     #         plt.ylabel('Norm Events')
     #         plt.xlabel(var)
     #         plt.legend()
-    #         plt.savefig(args.outf + "/{}.pdf".format(var), dpi=fig.dpi, bbox_inches="tight")
+    #         plt.savefig(args.outf + "/{}.png".format(var), dpi=fig.dpi, bbox_inches="tight")
     #         zt = ztest(dataSig,dataBkg)
     #         zTests.loc[len(zTests.index)] = [var,zt]
     #         zTests.to_csv("{}/zTests.csv".format(args.outf))
@@ -397,7 +408,7 @@ def main():
     plt.legend(loc='best')
     dfOut["auc_train"] = [auc_Train]
     dfOut["auc_test"] = [auc_Test]
-    fig.savefig(args.outf + "/roc_plot.pdf", dpi=fig.dpi, bbox_inches="tight")
+    fig.savefig(args.outf + "/roc_plot.png", dpi=fig.dpi, bbox_inches="tight")
     plt.close(fig)
 
     # plot eff vs pT
@@ -414,7 +425,7 @@ def main():
     ax.set_ylabel('Norm Events')
     ax.set_xlabel("NN Score")
     plt.legend()
-    plt.savefig(args.outf + "/SNN.pdf", dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(args.outf + "/SNN.png", dpi=fig.dpi, bbox_inches="tight")
 
     # plot discriminator
     binEdge = np.arange(-0.01, 1.02, 0.02)
@@ -430,7 +441,7 @@ def main():
     h_Train_Sg,h_Train_Sg_Bins = histMakePlot(y_Train_Sg,binEdge,weights=w_Train_Sg,color='xkcd:red',label='Sg Train',points=True)
     h_Train_Bg,h_Train_Bg_Bins = histMakePlot(y_Train_Bg,binEdge,weights=w_Train_Bg,color='xkcd:blue',label='Bg Train',points=True)
     ax.legend(loc='best', frameon=False)
-    fig.savefig(args.outf + "/discriminator.pdf", dpi=fig.dpi, bbox_inches="tight")
+    fig.savefig(args.outf + "/discriminator.png", dpi=fig.dpi, bbox_inches="tight")
     # ks test for overtraining
     dfOut["sigovertrain"] = [kstest(h_Train_Sg,h_test_Sg)]
     dfOut["bkgovertrain"] = [kstest(h_Train_Bg,h_test_Bg)]

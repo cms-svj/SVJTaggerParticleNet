@@ -16,7 +16,7 @@ def pdgIDClass(idSeries):
         idSeries = idSeries.replace(iD,i)
     return idSeries
 
-def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight):
+def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,signals,pT,weight,mcType):
     varSet = dataSet.columns.tolist()
     data = dataSet.to_numpy()
     evtNumIndex = varSet.index("jCstEvtNum")
@@ -40,6 +40,7 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight):
     signal = []
     pTs = []
     weights = []
+    mcTypes = []
     jIDs, jIDCounts = np.unique(jIDColumn,return_counts=True)
     jIDCounter = 0
     # looping over jets
@@ -53,10 +54,12 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight):
         sameJetConstData = data[sInd:eInd] # getting values for constituents in the same jet
         pTs.append(float(pT[sInd:eInd].iloc[0]))
         weights.append(float(weight[sInd:eInd].iloc[0]))
+        mcTypes.append(int(mcType[sInd:eInd][0]))
         if sameJetConstData[0][inFileIndex] in signalFileIndex:
-            signal.append([0, 1])
+            #signal.append([0, 1])
+            signal.append([0, 0, 1])
         else:
-            signal.append([1, 0])
+            signal.append(signals[sInd:eInd][0])
         sameJetConstDataTr = np.transpose(sameJetConstData)
         if numConst > sameJetConstDataTr.shape[1]:
             paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,numConst-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
@@ -82,7 +85,7 @@ def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight):
     print("There are {} labels.".format(len(signal)))
     print(inputPoints.shape)
     print(inputFeatures.shape)
-    return inputPoints, inputFeatures, inputJetFeatures, signal, inputFileIndices, pTs, weights
+    return inputPoints, inputFeatures, inputJetFeatures, signal, inputFileIndices, pTs, weights, mcTypes
 
 def getBranch(ftree,variable,branches,branchList):
     branch = ftree.arrays(variable,library="pd")
@@ -115,7 +118,7 @@ def normalize(df):
 def jetIdentifier(dataSet):
     dataSet["jID"] = (dataSet["jCstEvtNum"].astype(int))*10**6 + (dataSet["inputFile"].astype(int))*1000 + dataSet["jCstJNum"].astype(int)
 
-def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, uniform, mT, weight, numConst, tree="tree"):
+def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, uniform, mT, weight, numConst, num_classes, tree="tree"):
     dSets = []
     signal = []
     mcType =[] # 0 = signals other than baseline, 1 = baseline signal, 2 = QCD, 3 = TTJets
@@ -151,11 +154,11 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
             branches = branches.dropna()
             numEvent = len(branches)
             # if we do not limit the number of constituents we read in, the code is gonna take very long to run
-            if key == "signal":
-                numEvent = 500000#105238,500000
-            else:
-                numEvent = 750000#150000,750000
-            branches = branches.head(numEvent)
+            #if key == "signal":
+            #    numEvent = 10000#500000#105238,500000
+            #else:
+            #    numEvent = 10000#750000#150000,750000
+            #branches = branches.head(numEvent)
             print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
             # print(len(branches))
@@ -175,16 +178,21 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
             pTLabel = np.digitize(branch,pTBins) - 1.0
             pTLab = np.append(pTLab,pTLabel)
             if key == "signal":
-                signal += list([0, 1] for _ in range(len(branches)))
+                #signal += list([1, 0] for _ in range(len(branches)))
+                signal += list([1, 0, 0] for _ in range(len(branches)))
                 if fileName == "tree_SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017":
                     mcType += [1] * len(branches)
                 else:
                     mcType += [0] * len(branches)
             else:
-                signal += list([1, 0] for _ in range(len(branches)))
+                #signal += list([1, 0] for _ in range(len(branches)))
                 if "QCD" in fileName:
+                    #signal += list([1, 0] for _ in range(len(branches)))
+                    signal += list([1, 0, 0] for _ in range(len(branches)))
                     mcType += [2] * len(branches)
                 else:
+                    #signal += list([1, 0] for _ in range(len(branches)))
+                    signal += list([0, 1, 0] for _ in range(len(branches)))
                     mcType += [3] * len(branches)
             print("Number of Constituents",len(branches))
     mcType = np.array(mcType)
@@ -216,8 +224,8 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
     print("Order of variables:")
     for var in dataSet.columns:
         print(var)
-    inputPoints, inputFeatures, inputJetFeatures_unNormalized, signal, inputFileIndices, pT, weight = getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,pT,weight)
-    sigLabel = np.array(signal)[:,1]
+    inputPoints, inputFeatures, inputJetFeatures_unNormalized, signal, inputFileIndices, pT, weight, mcType = getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,signal,pT,weight,mcType)
+    sigLabel = np.array(signal)[:,num_classes-1]
     outputFolder = "processedDataNPZ"
     outputNPZFileName = "processedData_nc{}".format(numConst)
     dataInfo = []
@@ -287,7 +295,8 @@ if __name__=="__main__":
     mTs = args.features.mT
     weights = args.features.weight
     numConst = args.hyper.numConst
+    num_classes = args.hyper.num_classes
     if not os.path.isdir("processedDataNPZ"):
     	os.makedirs("processedDataNPZ")
-    process_all_vars(dSet.path, inputFiles, jetConstFeat, jetFeat, pTBins, uniform, mTs, weights, numConst)
+    process_all_vars(dSet.path, inputFiles, jetConstFeat, jetFeat, pTBins, uniform, mTs, weights, numConst, num_classes)
 
