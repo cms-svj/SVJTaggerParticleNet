@@ -23,20 +23,25 @@ This information is important for you to update the config file (`configs/C_tch_
 - lpc gpu: `root://cmseos.fnal.gov//store/user/keanet/tchannel/jetConstTrainingFiles/jetConstTrainingFiles/`
 - wilson cluster: `/work1/cms_svj/keane/particleNet/jetConstTrainingFiles/`
 ### Process Input Data
-Since the input data for the particleNet training have to be in a certain shape in order to run the code successfully, we need to process the training root files to get the input data in the proper shape first. Once we have processed the root files, we will get an npz file in the `processedDataNPZ` folder.
+Since the input data for the particleNet training have to be in a certain shape in order to run the code successfully, we need to process the training root files to get the input data in the proper shape first. In this step, we also split the dataset into train, test, and validation sets. Once we have processed the root files, we will get an npz file in the `processedDataNPZ` folder.
 ```
 python processData.py -C configs/C_tch_jConst.py
 ```
-The training code takes the npz file as input and runs the training. 
-The validation code also takes the same npz file as input, which significantly shortens the time to run these codes, since the input data only have to be processed once, instead of being processed before every training and before every validation.
-However, notice that the npz file depends on the hyperparameter `numConst` in the config file (`configs/C_tch_jConst.py`).
-`numConst` is the maximum number of constituents we keep for each jet in the training. The default is 100. If you vary this number, make sure you process the input data again to get another npz file, so that the input data will be in the desired shape.
-
+Next, we need to sample the train and validation sets properly, so that there is as little correlation between pT and the neural network score as possible. This is done by sampling the train/validation set in a way that the pT distribution of all the signals combined matches the pT distribution of QCD and that of TTJets.
+Before running the command below, make sure that in `dataset_sampler.py`, the variable `inNPZFileName` is set to the name of the train/validation set npz file. You will need to run this command twice: once for the train set and once for the validation set.
+```
+python dataset_sampler.py
+```
 ## Training and Validation
+In `train.py`, set the variables `trainNPZ` and `valNPZ` to the paths of the output npz files from the previous step, and then run
 ```
 python train.py --outf logTest -C configs/C_tch_jConst.py
+```
+After the training, set the variables `trainNPZ` and `testNPZ` to the paths of the train and test npz files before any sampling was applied, and then run
+```
 python validation.py --model net.pth --outf logTest -C logTest/config_out.py
 ```
+This way, we are using train and validation sets where the pT distributions of our samples match one another when we are doing the training to minimize the correlation between the training output and pT. After the training, we can inference on our model with the unsampled train and test sets to make validation plots. It is tricky to calculate the weights of the sampled train, whereas the weights of the unsampled train set is simply the original weight times (total number of simulated jets)/(number of simulated jets in the train set). We are not using weights in the training, but we are using weights when making the validation plots.
 
 ## Other Useful Information
 

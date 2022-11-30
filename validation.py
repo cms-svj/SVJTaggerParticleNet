@@ -379,6 +379,8 @@ def main():
     uniform = args.features.uniform
     weight = args.features.weight
     numConst = args.hyper.numConst
+    trainNPZ = "processedDataNPZ/processedData_nc100_train.npz"
+    testNPZ = "processedDataNPZ/processedData_nc100_test.npz"
     train = RootDataset("processedDataNPZ/processedData_nc100_train.npz")
     test = RootDataset("processedDataNPZ/processedData_nc100_test.npz")
     inputFeatureVars = train.inputFeaturesVarName

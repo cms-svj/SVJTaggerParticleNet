@@ -103,8 +103,10 @@ def main():
     uniform = args.features.uniform
     weight = args.features.weight
     numConst = args.hyper.numConst
-    train = RootDataset("processedDataNPZ/processedData_nc100_train_pTWeightedByBinAndProportion.npz")
-    val = RootDataset("processedDataNPZ/processedData_nc100_validation_pTWeightedByBinAndProportion.npz")
+    trainNPZ = "processedDataNPZ/processedData_nc100_train_pTWeightedByBinAndProportion.npz"
+    valNPZ = "processedDataNPZ/processedData_nc100_validation_pTWeightedByBinAndProportion.npz"
+    train = RootDataset(trainNPZ)
+    val = RootDataset(valNPZ)
     inputFeatureVars = train.inputFeaturesVarName
     print("Input jet constituent features:",inputFeatureVars)
     loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
