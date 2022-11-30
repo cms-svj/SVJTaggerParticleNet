@@ -27,7 +27,6 @@ config.dataset.background =  {"background": [
 "tree_QCD_Pt_1400to1800_PN",
 "tree_QCD_Pt_1800to2400_PN",
 "tree_QCD_Pt_2400to3200_PN",
-"tree_QCD_Pt_3200toInf_PN",
 "tree_TTJets_DiLept_genMET-150_PN",
 "tree_TTJets_DiLept_PN",
 "tree_TTJets_HT-1200to2500_PN",
@@ -43,18 +42,26 @@ config.dataset.background =  {"background": [
 config.dataset.sample_fractions = [0.70, 0.15, 0.15]
 config.features.uniform = "jCstPtAK8"
 config.features.weight = "jCstWeightAK8"
-config.features.mT = "jCstPtAK8"
 config.features.jetConst = [
 "jCstPt",
 "jCstEta",
 "jCstPhi",
 "jCstEnergy",
 "jCstPdgId",
+"jCstdxy",
+"jCstdxysig",
+"jCstdz",
+"jCstdzsig",
+"jCstPuppiWeight",
 "jCsthvCategory",
 "jCstEvtNum",
 "jCstJNum"
 ]
 config.features.jetVariables = [
+"jCstPtAK8",
+"jCstEtaAK8",
+"jCstPhiAK8",
+"jCstEnergyAK8",
 "jCstAxismajorAK8",
 "jCstAxisminorAK8",
 "jCstTau1AK8",
@@ -73,12 +80,12 @@ config.hyper.num_of_edgeConv_convLayers = 2
 config.hyper.num_of_fc_layers = 5
 config.hyper.num_of_fc_nodes = 256
 config.hyper.fc_dropout = 0.3
-config.hyper.epochs = 120
+config.hyper.epochs = 80
 config.hyper.lambdaTag = 1.0
 config.hyper.lambdaReg = 0.0
 config.hyper.lambdaGR = 1.0 # keep this at 1 and change lambdaReg only
 config.hyper.lambdaDC = 0.0
 config.hyper.pTBins = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2500, 3000, 3500, 4000, 4500]
 config.hyper.n_pTBins = len(config.hyper.pTBins)
-config.hyper.rseed = 30
+config.hyper.rseed = 48
 config.hyper.num_classes = 3

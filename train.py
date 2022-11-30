@@ -14,13 +14,11 @@ import matplotlib.pyplot as plt
 from magiconfig import ArgumentParser, MagiConfigOptions, ArgumentDefaultsRawHelpFormatter
 from configs import configs as c
 import numpy as np
-from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score, roc_auc_score
 from tqdm import tqdm
 from Disco import distance_corr
 import copy
 from GPUtil import showUtilization as gpu_usage
 
-# ask Kevin how to create training root files for the NN
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["NCCL_DEBUG"] = "INFO"
@@ -34,19 +32,18 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def processBatch(args, device, data, model, criterion, lambdas, epoch):
-    label, points, features, jetFeatures, mcType, pTLab, pT, mT, w, med, dark, rinv, alpha = data
+    label, points, features, jetFeatures, inputFileIndex, pT, w, med, dark, rinv, alpha = data
     l1, l2, lgr, ldc = lambdas
     #print("\n Initial GPU Usage")
     #gpu_usage()
     with autocast():
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
-        output = model(points.float().to(device), features.float().to(device), jetFeatures.float().to(device))
+        output = model(points.float().to(device), features.float().to(device))
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     torch.cuda.empty_cache()
     #print("\n After emptying cache")
     #gpu_usage()
-    pTVal = pTLab.squeeze(1)
     labVal = label.squeeze(1)
 
     # Added distance correlation calculation between tagger output and jet pT
@@ -62,15 +59,14 @@ def processBatch(args, device, data, model, criterion, lambdas, epoch):
     maskedweight = torch.masked_select(normedweight, mask)
     batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
     lambdaDC = ldc
-    auc = 1.0#roc_auc_score(label.to("cpu").squeeze(1).numpy(), outSoftmax.to("cpu").detach().numpy(), multi_class='ovr')
-    #print(auc)
-    return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc, auc
+    return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc
 
 def main():
     rng = np.random.RandomState(2022)
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
     parser.add_argument("--outf", type=str, default="logs", help='Name of folder to be used to store outputs')
+    parser.add_argument("--inpf", type=str, default="processedData_nc100", help='Name of the npz input training file')
     parser.add_argument("--model", type=str, default=None, help="Existing model to continue training, if applicable")
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
@@ -97,21 +93,22 @@ def main():
     inputFiles.update(sigFiles)
     print(inputFiles)
     varSetjetConst = args.features.jetConst
-    inputFeatureVars = [var for var in varSetjetConst if var not in ["jCsthvCategory","jCstEvtNum","jCstJNum"]]
-    print("Input jet constituent features:",inputFeatureVars)
     varSetjetVariables = args.features.jetVariables
+    varSetjetVariables = []
+    for var in args.features.jetVariables:
+        if var not in ['jCstPtAK8', 'jCstEtaAK8', 'jCstPhiAK8', 'jCstEnergyAK8']:
+            varSetjetVariables.append(var)
     print("Input jet features:",varSetjetVariables)
     pTBins = hyper.pTBins
     uniform = args.features.uniform
-    mT = args.features.mT
     weight = args.features.weight
     numConst = args.hyper.numConst
-    dataset = RootDataset("processedDataNPZ/processedData_nc{}.npz".format(numConst))
-    sizes = get_sizes(len(dataset), dSet.sample_fractions)
-    train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(42))
+    train = RootDataset("processedDataNPZ/processedData_nc100_train_pTWeightedByBinAndProportion.npz")
+    val = RootDataset("processedDataNPZ/processedData_nc100_validation_pTWeightedByBinAndProportion.npz")
+    inputFeatureVars = train.inputFeaturesVarName
+    print("Input jet constituent features:",inputFeatureVars)
     loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
     loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
-    loader_test = udata.DataLoader(dataset=test, batch_size=hyper.batchSize, num_workers=0)
     # Build model
     network_module = particlenet_pf
     network_options = {}
@@ -122,7 +119,7 @@ def main():
     network_options["num_of_fc_nodes"] = args.hyper.num_of_fc_nodes 
     network_options["fc_dropout"] = args.hyper.fc_dropout
     network_options["num_classes"] = args.hyper.num_classes
-    model = network_module.get_model(inputFeatureVars,len(varSetjetVariables),**network_options)
+    model = network_module.get_model(inputFeatureVars,**network_options)
     if (args.model == None):
         #model.apply(init_weights)
         print("Creating new model ")
@@ -154,7 +151,6 @@ def main():
     validation_losses_tag = np.zeros(hyper.epochs)
     validation_losses_dc = np.zeros(hyper.epochs)
     validation_losses_total = np.zeros(hyper.epochs)
-    aucs = []
     for epoch in range(hyper.epochs):
         print("Beginning epoch " + str(epoch))
         # training
@@ -166,8 +162,7 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag, batch_loss_dc, dc_val, auc_train = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
-            aucs.append("auc train e-{} b-{}: {}\n".format(epoch,i,auc_train))
+            batch_loss_tag, batch_loss_dc, dc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             batch_loss_total = batch_loss_tag # + batch_loss_dc
             batch_loss_total.backward()
             optimizer.step()
@@ -185,6 +180,9 @@ def main():
         training_losses_tag[epoch] = train_loss_tag
         training_losses_dc[epoch] = train_loss_dc
         training_losses_total[epoch] = train_loss_total
+        if np.isnan(train_loss_tag):
+            print("nan in training")
+            break
         print("t_tag: "+ str(train_loss_tag))
         print("t_dc: "+ str(train_loss_dc))
         print("t_dc_val: "+ str(train_dc_val))
@@ -196,8 +194,7 @@ def main():
         val_dc_val = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag, output_loss_dc, dc_val, auc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
-            aucs.append("auc val e-{} b-{}: {}\n".format(epoch,i,auc_val))
+            output_loss_tag, output_loss_dc, dc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             output_loss_total = output_loss_tag # + output_loss_dc
             val_loss_tag += output_loss_tag.item()
             # val_loss_dc += output_loss_dc.item()
@@ -235,9 +232,6 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    aucFile = open(args.outf + "/auc.txt", "w+")
-    aucFile.writelines(aucs)
-    aucFile.close()
     parser.write_config(args, args.outf + "/config_out.py")
 
 if __name__ == "__main__":

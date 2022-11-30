@@ -5,6 +5,7 @@ from configs import configs as c
 import torch.utils.data as udata
 import torch
 import pandas as pd
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 import os
 
@@ -16,85 +17,21 @@ def pdgIDClass(idSeries):
         idSeries = idSeries.replace(iD,i)
     return idSeries
 
-def getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,signals,pT,weight,mcType):
-    varSet = dataSet.columns.tolist()
-    data = dataSet.to_numpy()
-    evtNumIndex = varSet.index("jCstEvtNum")
-    fJetNumIndex = varSet.index("jCstJNum")
-    etaIndex = varSet.index("jCstEta")
-    phiIndex = varSet.index("jCstPhi")
-    inFileIndex = varSet.index("inputFile")
-    hvIndex = varSet.index("jCsthvCategory")
-    jIDIndex = varSet.index("jID")
-    jetFeatIndices = [varSet.index(jF) for jF in jetFeat]
-    inFileColumn = data[:,inFileIndex]
-    jIDColumn = data[:,jIDIndex]
+def phi_(x,y):
+    phi = np.arctan2(y,x)
+    return np.where(phi < 0, phi + 2*np.pi, phi)
 
-    inputPoints = []
-    inputFeatures = []
-    inputJetFeatures = []
-    inputFileIndices = []
-    # grouping constituents that belong to the same jet together
-    print("There are {} unique jets.".format(len(np.unique(jIDColumn))))
-    count = 1
-    signal = []
-    pTs = []
-    weights = []
-    mcTypes = []
-    jIDs, jIDCounts = np.unique(jIDColumn,return_counts=True)
-    jIDCounter = 0
-    # looping over jets
-    for jIDCount in jIDCounts:
-        if count % 5000 == 0:
-            print("Transformed {} jets".format(count))
-        count += 1
-        sInd = jIDCounter
-        eInd = jIDCounter+jIDCount
-        jIDCounter = eInd
-        sameJetConstData = data[sInd:eInd] # getting values for constituents in the same jet
-        pTs.append(float(pT[sInd:eInd].iloc[0]))
-        weights.append(float(weight[sInd:eInd].iloc[0]))
-        mcTypes.append(int(mcType[sInd:eInd][0]))
-        if sameJetConstData[0][inFileIndex] in signalFileIndex:
-            #signal.append([0, 1])
-            signal.append([0, 0, 1])
-        else:
-            signal.append(signals[sInd:eInd][0])
-        sameJetConstDataTr = np.transpose(sameJetConstData)
-        if numConst > sameJetConstDataTr.shape[1]:
-            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,numConst-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
-        else:
-            paddedJetConstData = sameJetConstDataTr[:,:numConst]
-        eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
-        eachJetConstFeatures = []
-        eachJetJFeatures = []
-        # looping over jet/constituent features
-        for i in range(paddedJetConstData.shape[0]):
-            # make sure information that would easily give away the identity of the jet is not included as input features
-            if i in jetFeatIndices:
-                eachJetJFeatures.append(paddedJetConstData[i][0])
-            elif i not in [etaIndex,phiIndex,evtNumIndex,fJetNumIndex,inFileIndex,hvIndex,jIDIndex]:
-                eachJetConstFeatures.append(paddedJetConstData[i])
-        inputPoints.append(eachJetPoints)
-        inputFeatures.append(eachJetConstFeatures)
-        inputJetFeatures.append(eachJetJFeatures)
-        inputFileIndices.append(inFileColumn[sInd:eInd][0])
-    inputPoints = np.array(inputPoints)
-    inputFeatures = np.array(inputFeatures)
-    inputJetFeatures = np.array(inputJetFeatures)
-    print("There are {} labels.".format(len(signal)))
-    print(inputPoints.shape)
-    print(inputFeatures.shape)
-    return inputPoints, inputFeatures, inputJetFeatures, signal, inputFileIndices, pTs, weights, mcTypes
+def deltaPhi(phiVal1,phiVal2):
+    phi1 = phi_( np.cos(phiVal1), np.sin(phiVal1) )
+    phi2 = phi_( np.cos(phiVal2), np.sin(phiVal2) )
+    dphi = phi1 - phi2
+    dphi_edited = np.where(dphi < -np.pi, dphi + 2*np.pi, dphi)
+    dphi_edited = np.where(dphi_edited > np.pi, dphi_edited - 2*np.pi, dphi_edited)
+    return dphi_edited
 
-def getBranch(ftree,variable,branches,branchList):
-    branch = ftree.arrays(variable,library="pd")
-    branch = branch.head(len(branches))
-    branchList.append(branch)
-
-def getPara(fileName,paraName,paraList,branches,key):
+def getPara(fileName,paraName,paraList):
     paravalue = 0
-    if key == "signal":
+    if "SVJ" in fileName:
         ind = fileName.find(paraName)
         fnCut = fileName[ind:]
         indUnd = fnCut.find("_")
@@ -110,7 +47,100 @@ def getPara(fileName,paraName,paraList,branches,key):
             paravalue = float(paravalue.replace("p","."))
         else:
             paravalue = float(paravalue)
-    paraList += [paravalue]*len(branches)
+    paraList.append(paravalue)
+
+def getParticleNetInputs(dataSet,jetFeat,inputFileNames,numConst,pT,weight):
+    varSet = dataSet.columns.tolist()
+    data = dataSet.to_numpy()
+    evtNumIndex = varSet.index("jCstEvtNum")
+    fJetNumIndex = varSet.index("jCstJNum")
+    etaIndex = varSet.index("deltaEta")
+    phiIndex = varSet.index("deltaPhi")
+    inFileIndex = varSet.index("inputFile")
+    hvIndex = varSet.index("jCsthvCategory")
+    jIDIndex = varSet.index("jID")
+    jetFeatIndices = []
+    jetFeatLabels = []
+    for jF in jetFeat:
+        if jF not in ['jCstPtAK8', 'jCstEtaAK8', 'jCstPhiAK8', 'jCstEnergyAK8']:
+            jetFeatIndices.append(varSet.index(jF))
+            jetFeatLabels.append(jF)
+    inFileColumn = data[:,inFileIndex]
+    jIDColumn = data[:,jIDIndex]
+
+    inputPoints = []
+    inputFeatures = []
+    inputFeaturesVarName = []
+    inputJetFeatures = []
+    inputFileIndices = []
+    # grouping constituents that belong to the same jet together
+    print("There are {} unique jets.".format(len(np.unique(jIDColumn))))
+    count = 1
+    signal = []
+    pTs = []
+    weights = []
+    mMeds = []
+    mDarks = []
+    rinvs = []
+    alphas = []
+    jIDs, jIDCounts = np.unique(jIDColumn,return_counts=True) 
+    jIDCounter = 0 
+    # looping over jets
+    for jIDCount in jIDCounts: 
+        if count % 10000 == 0:
+            print("Transformed {} jets".format(count))
+        count += 1
+        sInd = jIDCounter
+        eInd = jIDCounter+jIDCount
+        jIDCounter = eInd
+        sameJetConstData = data[sInd:eInd] # getting values for constituents in the same jet
+        pTs.append(float(pT[sInd:eInd].iloc[0]))
+        weights.append(float(weight[sInd:eInd].iloc[0]))
+        inputFileName = inputFileNames[int(sameJetConstData[0][inFileIndex])]
+        getPara(inputFileName,"mMed",mMeds) 
+        getPara(inputFileName,"mDark",mDarks)
+        getPara(inputFileName,"rinv",rinvs)
+        getPara(inputFileName,"alpha",alphas)
+        if "QCD" in inputFileName:
+            signal.append([1, 0, 0])
+        elif "TTJets" in inputFileName:
+            signal.append([0, 1, 0])
+        else:
+            signal.append([0, 0, 1])
+        sameJetConstDataTr = np.transpose(sameJetConstData)
+        if numConst > sameJetConstDataTr.shape[1]:
+            paddedJetConstData = np.pad(sameJetConstDataTr,((0,0),(0,numConst-sameJetConstDataTr.shape[1])), 'constant', constant_values=0)
+        else:
+            paddedJetConstData = sameJetConstDataTr[:,:numConst]
+        eachJetPoints = np.array([paddedJetConstData[etaIndex],paddedJetConstData[phiIndex]])
+        eachJetConstFeatures = []
+        eachJetJFeatures = []
+        # looping over jet/constituent features
+        for i in range(paddedJetConstData.shape[0]):
+            # make sure information that would easily give away the identity of the jet is not included as input features
+            if i in jetFeatIndices:
+                eachJetJFeatures.append(paddedJetConstData[i][0])
+            elif i not in [evtNumIndex,fJetNumIndex,inFileIndex,hvIndex,jIDIndex]:
+                eachJetConstFeatures.append(paddedJetConstData[i])
+                if count == 2:
+                    inputFeaturesVarName.append(varSet[i])
+        inputPoints.append(eachJetPoints)
+        inputFeatures.append(eachJetConstFeatures)
+        inputJetFeatures.append(eachJetJFeatures)
+        inputFileIndices.append(inFileColumn[sInd:eInd][0])
+    inputPoints = np.array(inputPoints)
+    inputFeatures = np.array(inputFeatures)
+    inputJetFeatures = np.array(inputJetFeatures)
+    inputFeaturesVarName = np.array(inputFeaturesVarName)
+    inputFileIndices = np.array(inputFileIndices)
+    pTs = np.array(pTs)
+    weights = np.array(weights)
+    mMeds = np.array(mMeds)
+    mDarks = np.array(mDarks)
+    rinvs = np.array(rinvs)
+    alphas = np.array(alphas)
+    print("There are {} labels.".format(len(signal)))
+    return inputPoints, inputFeatures, inputJetFeatures, inputFeaturesVarName, jetFeatLabels, signal, inputFileIndices, pTs, weights, mMeds, mDarks, rinvs, alphas
 
 def normalize(df):
     return (df-df.mean())/df.std()
@@ -118,22 +148,99 @@ def normalize(df):
 def jetIdentifier(dataSet):
     dataSet["jID"] = (dataSet["jCstEvtNum"].astype(int))*10**6 + (dataSet["inputFile"].astype(int))*1000 + dataSet["jCstJNum"].astype(int)
 
-def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, uniform, mT, weight, numConst, num_classes, tree="tree"):
+# this function randomly splits the dataset into train, test, val sets, but retain the same proportion of jets found in each sample
+def ttvIndex(inputFileIndices,sample_fractions,inputFileNames):
+    uniqueIndices = np.unique(inputFileIndices)
+    train_indices = []
+    test_indices = []
+    validation_indices = []
+    inputFileNameOrder = []
+    test_scales = []
+    for ind in uniqueIndices:
+        inputFileNameOrder.append(inputFileNames[int(ind)])
+        prng = np.random.RandomState(int(ind))
+        inputIndices = np.where(inputFileIndices==ind)[0]
+        print("len(inputIndices)",len(inputIndices))
+        inputIndices_len = len(inputIndices)
+        prng.shuffle(inputIndices)
+        train_len = int(inputIndices_len*sample_fractions[0])
+        if (inputIndices_len - train_len) % 2 != 0:
+            train_len += 1
+        test_len =  int((inputIndices_len - train_len)/2)
+        print("train_len",train_len)
+        print("test_len",test_len)
+        train_indices += list(inputIndices[:train_len])
+        test_indices += list(inputIndices[train_len:train_len+test_len])
+        validation_indices += list(inputIndices[train_len+test_len:])
+        test_scales.append(float(inputIndices_len)/test_len)
+    return train_indices,test_indices,validation_indices,inputFileNameOrder,test_scales
+
+def scale_weight(inputFileIndices_subset,inputFileIndices,weight):
+    uniInput, uniCount = np.unique(inputFileIndices,return_counts=True)
+    uniInput_sub, uniCount_sub = np.unique(inputFileIndices_subset,return_counts=True)
+    scales = uniCount/uniCount_sub
+    for i in range(len(uniInput_sub)):
+        uIn_sub = uniInput_sub[i]
+        scale = scales[i]
+        weight[inputFileIndices_subset == uIn_sub] *= scale
+    
+def save_npz(dataset_indices, dataset_type, inputFileNames, inputPoints, inputFeatures, inputJetFeatures, inputFeaturesVarName, jetFeat, signal, inputFileIndices, pT, weight, mMed, mDark, rinv, alpha, outputFolder,outputNPZFileName):
+    inputPoints = np.take(inputPoints,dataset_indices,axis=0)
+    inputFeatures = np.take(inputFeatures,dataset_indices,axis=0)
+    inputJetFeatures = np.take(inputJetFeatures,dataset_indices,axis=0)
+    inputFileIndices_subset = np.take(inputFileIndices,dataset_indices,axis=0)
+    signal = np.take(signal,dataset_indices,axis=0)
+    pT = np.take(pT,dataset_indices,axis=0)
+    weight = np.take(weight,dataset_indices,axis=0)
+    scale_weight(inputFileIndices_subset,inputFileIndices,weight)
+    mMed = np.take(mMed,dataset_indices,axis=0)
+    mDark = np.take(mDark,dataset_indices,axis=0)
+    rinv = np.take(rinv,dataset_indices,axis=0)
+    alpha = np.take(alpha,dataset_indices,axis=0)
+    dataInfo = []
+    dataInfo.append("The number of jets from each file:")
+    inFileInds,inFileCounts = np.unique(inputFileIndices,return_counts=True)
+    for i in inFileInds:
+        inFileCount = inFileCounts[int(i)]
+        dataInfo.append("{}:{} jets".format(np.array(inputFileNames)[int(i)],inFileCount))
+    with open('{}/{}_{}_dataInfo.txt'.format(outputFolder,outputNPZFileName,dataset_type), 'w') as f:
+        for line in dataInfo:
+            f.write("{}\n".format(line))
+    dictOut = {
+        "inputPoints":inputPoints,
+        "inputFeatures":inputFeatures,
+        "inputJetFeatures":inputJetFeatures,
+        "inputFileIndices":inputFileIndices_subset,
+        "signal":signal,
+        "pT":pT,
+        "weight":weight,
+        "mMed":mMed,
+        "mDark":mDark,
+        "rinv":rinv,
+        "alpha":alpha,
+        "inputFileNames":inputFileNames,
+        "inputFeaturesVarName":inputFeaturesVarName
+    }
+    print("pT",len(dictOut['pT']))
+    print("weight",len(dictOut['weight']))
+    print("signal",len(dictOut['signal']))
+    print("inputFileIndices",len(dictOut['inputFileIndices']))    
+    print("inputFileNames",inputFileNames)
+    print("inputPoints",dictOut['inputPoints'].shape)
+    print("inputFeatures",dictOut['inputFeatures'].shape)
+    print("inputJetFeatures",dictOut['inputJetFeatures'].shape)  
+    print("mMed", np.unique(dictOut["mMed"]))      
+    print("mDark", np.unique(dictOut["mDark"]))      
+    print("rinv", np.unique(dictOut["rinv"]))      
+    print("alpha", np.unique(dictOut["alpha"]))      
+    np.savez_compressed("{}/{}_{}.npz".format(outputFolder,outputNPZFileName,dataset_type),**dictOut)
+
+def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, uniform_var, weight_var, numConst, num_classes, sample_fractions, tree="tree"):
     dSets = []
-    signal = []
-    mcType =[] # 0 = signals other than baseline, 1 = baseline signal, 2 = QCD, 3 = TTJets
     pTLab = np.array([])
-    pTs = []
-    mTs = []
-    mMeds = []
-    mDarks = []
-    rinvs = []
-    alphas = []
-    weights = []
     fileIndex = 0
     inputFileNames = []
-    signalFileIndex = []
-    variables = jetConstFeat + jetFeat
+    variables = jetConstFeat + jetFeat + [weight_var]
     for key,fileList in samples.items():
         nsigfiles = len(samples["signal"])
         nbkgfiles = len(samples["background"])
@@ -143,80 +250,53 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
             ftree = f[tree]
             branches = ftree.arrays(variables,library="pd")
             if key == "signal":
-                signalFileIndex.append(fileIndex)
                 jetCatBranch = ftree.arrays("jCsthvCategory",library="pd")
                 darkCon = ((jetCatBranch["jCsthvCategory"] == 3) | (jetCatBranch["jCsthvCategory"] == 5) | (jetCatBranch["jCsthvCategory"] == 9))
                 branches = branches[darkCon]
             inputFileNames.append(fileName)
             branches["inputFile"] = [fileIndex]*len(branches) # record name of the input file, important for distinguishing which jet the constituents belong to
-            fileIndex += 1
-            branches.replace([np.inf, -np.inf], np.nan, inplace=True)
-            branches = branches.dropna()
+            #branches.replace([np.inf, -np.inf], np.nan, inplace=True)
+            #branches = branches.dropna()
             numEvent = len(branches)
-            # if we do not limit the number of constituents we read in, the code is gonna take very long to run
             #if key == "signal":
             #    numEvent = 10000#500000#105238,500000
             #else:
             #    numEvent = 10000#750000#150000,750000
+            #numEvent = 1000            
             #branches = branches.head(numEvent)
             print("Total Number of constituents for {}".format(fileName))
             print(len(branches))
             # print(len(branches))
             # branches = branches.head(10000)
             dSets.append(branches)
-            getBranch(ftree,uniform,branches,pTs)
-            getBranch(ftree,mT,branches,mTs)
-            getBranch(ftree,weight,branches,weights)
-            # getPara(fileName,"mZprime",mMeds,branches,key)
-            getPara(fileName,"mMed",mMeds,branches,key) # use this for t-channel
-            getPara(fileName,"mDark",mDarks,branches,key)
-            getPara(fileName,"rinv",rinvs,branches,key)
-            getPara(fileName,"alpha",alphas,branches,key)
             # get the pT label based on what pT bin the jet pT falls into
-            branch = ftree.arrays(uniform,library="pd")
+            branch = ftree.arrays(uniform_var,library="pd")
             branch = branch.head(len(branches)).to_numpy().flatten()
             pTLabel = np.digitize(branch,pTBins) - 1.0
             pTLab = np.append(pTLab,pTLabel)
-            if key == "signal":
-                #signal += list([1, 0] for _ in range(len(branches)))
-                signal += list([1, 0, 0] for _ in range(len(branches)))
-                if fileName == "tree_SVJ_mZprime-3000_mDark-20_rinv-0.3_alpha-peak_MC2017":
-                    mcType += [1] * len(branches)
-                else:
-                    mcType += [0] * len(branches)
-            else:
-                #signal += list([1, 0] for _ in range(len(branches)))
-                if "QCD" in fileName:
-                    #signal += list([1, 0] for _ in range(len(branches)))
-                    signal += list([1, 0, 0] for _ in range(len(branches)))
-                    mcType += [2] * len(branches)
-                else:
-                    #signal += list([1, 0] for _ in range(len(branches)))
-                    signal += list([0, 1, 0] for _ in range(len(branches)))
-                    mcType += [3] * len(branches)
-            print("Number of Constituents",len(branches))
-    mcType = np.array(mcType)
-    mMed = np.array(mMeds)
-    mDark = np.array(mDarks)
-    rinv = np.array(rinvs)
-    alpha = np.array(alphas)
+            fileIndex += 1
+    inputFileNames = np.array(inputFileNames)
     dataSet = pd.concat(dSets)
     jetIdentifier(dataSet)
     dataSet.sort_values("jID",inplace=True)
-    pT = pd.concat(pTs)
-    mT = pd.concat(mTs)
-    weight = pd.concat(weights)
-    print("weight")
-    print(np.unique(weight))
+    pT = dataSet[uniform_var]
+    weight = dataSet[weight_var]
     #dataSet["jCstPdgId"] = pdgIDClass(dataSet["jCstPdgId"])
     print(dataSet.head())
     print("The number of constituents in each input training file:")
     print(dataSet["inputFile"].value_counts())
-    
-    dataSet["jCstEta_Norm"] = dataSet["jCstEta"]
-    dataSet["jCstPhi_Norm"] = dataSet["jCstPhi"]
-    allVariables = dataSet.columns
-    columns_to_normalize = [var for var in allVariables if var not in ["jCstEta","jCstPhi","inputFile","jCstEvtNum","jCstJNum"] + jetFeat]
+    dataSet["deltaEta"] = dataSet["jCstEtaAK8"] - dataSet["jCstEta"]
+    dataSet["deltaPhi"] = deltaPhi(dataSet["jCstPhiAK8"],dataSet["jCstPhi"])
+    cond = (np.array(dataSet["jCstPhiAK8"] - dataSet["jCstPhi"]) < -np.pi) | (np.array(dataSet["jCstPhiAK8"] - dataSet["jCstPhi"]) > np.pi)
+    dataSet["logPT"] = np.log(dataSet["jCstPt"])
+    dataSet["logE"] = np.log(dataSet["jCstEnergy"])
+    dataSet["logPTrpTJ"] = np.log(np.divide(dataSet["jCstPt"],dataSet["jCstPtAK8"]))
+    dataSet["logErEJ"] = np.log(np.divide(dataSet["jCstEnergy"],dataSet["jCstEnergyAK8"]))
+    dataSet["deltaR"] = np.sqrt(np.square(dataSet["deltaEta"]) + np.square(dataSet["deltaPhi"]))
+    dataSet["tanhdxy"] = np.tanh(dataSet["jCstdxy"])
+    dataSet["tanhdz"] = np.tanh(dataSet["jCstdz"])
+    dataSet = dataSet.drop(['jCstPt', 'jCstEta', 'jCstPhi', 'jCstEnergy', 'jCstPtAK8', 'jCstEtaAK8', 'jCstPhiAK8', 'jCstEnergyAK8', 'jCstdxy', 'jCstdz', weight_var],axis=1)
+    columns_to_normalize = ['jCstPdgId']
     dataSetToNormalize = dataSet[columns_to_normalize]
     jConstmean = dataSetToNormalize.mean()
     jConststd = dataSetToNormalize.std()
@@ -224,42 +304,17 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
     print("Order of variables:")
     for var in dataSet.columns:
         print(var)
-    inputPoints, inputFeatures, inputJetFeatures_unNormalized, signal, inputFileIndices, pT, weight, mcType = getParticleNetInputs(dataSet,jetFeat,signalFileIndex,numConst,signal,pT,weight,mcType)
-    sigLabel = np.array(signal)[:,num_classes-1]
+    # getting input features into the right shape for particleNet
+    inputPoints, inputFeatures, inputJetFeatures_unNormalized, inputFeaturesVarName, jetFeat, signal, inputFileIndices, pT, weight, mMed, mDark, rinv, alpha  = getParticleNetInputs(dataSet,jetFeat,inputFileNames,numConst,pT,weight)
+    # splitting up the dataset into train, test, validation
+    print("total jets", len(inputFileIndices))
+    train_indices,test_indices,validation_indices,inputFileNameOrder,test_scales = ttvIndex(inputFileIndices,sample_fractions,inputFileNames)
+    # normalize jet variables and saving normalization information
     outputFolder = "processedDataNPZ"
     outputNPZFileName = "processedData_nc{}".format(numConst)
-    dataInfo = []
-    dataInfo.append("The total number of jets: {}".format(len(sigLabel)))
-    dataInfo.append("Total number of signal jets: {}".format(len(sigLabel[sigLabel==1])))
-    dataInfo.append("Total number of background jets: {}".format(len(sigLabel[sigLabel==0])))
-    dataInfo.append("The number of jets from each file:")
-    inFileInds,inFileCounts = np.unique(inputFileIndices,return_counts=True)
-    for i in inFileInds:
-        inFileCount = inFileCounts[int(i)]
-        dataInfo.append("{}:{} jets".format(np.array(inputFileNames)[int(i)],inFileCount))
-    with open('{}/{}_dataInfo.txt'.format(outputFolder,outputNPZFileName), 'w') as f:
-        for line in dataInfo:
-            f.write("{}\n".format(line))
     jMean = np.mean(inputJetFeatures_unNormalized,axis=0)
     jStd = np.std(inputJetFeatures_unNormalized,axis=0)
     inputJetFeatures = (inputJetFeatures_unNormalized - jMean)/jStd
-    dictOut = {
-        "inputPoints":inputPoints,
-        "inputFeatures":inputFeatures,
-        "inputJetFeatures":inputJetFeatures,
-        "signal":signal,
-        "mcType":mcType,
-        "pTLab":pTLab,
-        "pT":pT,
-        "mT":mT,
-        "weight":weight,
-        "mMed":mMed,
-        "mDark":mDark,
-        "rinv":rinv,
-        "alpha":alpha,
-        "inputFileIndices":inputFileIndices,
-        "signalFileIndex":signalFileIndex
-    }
     inferenceDict = {
         "jConstVariables":columns_to_normalize,
         "jConstmean":jConstmean,
@@ -268,16 +323,12 @@ def process_all_vars(inputFolder, samples, jetConstFeat, jetFeat, pTBins, unifor
         "jMean":jMean,
         "jStd":jStd,
     }
-    print("pT",len(pT))
-    print("weight",len(weight))
-    print("jet constituent variables that are normalized",columns_to_normalize)
-    print("jet variables that are normalized",jetFeat)
-    print("inputPoints",inputPoints.shape)
-    print("inputFeatures",inputFeatures.shape)
-    print("inputJetFeatures",inputJetFeatures.shape)        
-    np.savez_compressed("{}/{}.npz".format(outputFolder,outputNPZFileName),**dictOut)
     np.savez_compressed("{}/{}_Inference.npz".format(outputFolder,outputNPZFileName),**inferenceDict)
-    
+    # save input features as train, test, and validation sets
+    save_npz(train_indices, "train", inputFileNames, inputPoints, inputFeatures, inputJetFeatures, inputFeaturesVarName, jetFeat, signal, inputFileIndices, pT, weight, mMed, mDark, rinv, alpha, outputFolder,outputNPZFileName)
+    save_npz(test_indices, "test", inputFileNames, inputPoints, inputFeatures, inputJetFeatures, inputFeaturesVarName, jetFeat, signal, inputFileIndices, pT, weight, mMed, mDark, rinv, alpha, outputFolder,outputNPZFileName)
+    save_npz(validation_indices, "validation", inputFileNames, inputPoints, inputFeatures, inputJetFeatures, inputFeaturesVarName, jetFeat, signal, inputFileIndices, pT, weight, mMed, mDark, rinv, alpha, outputFolder,outputNPZFileName)
+   
 if __name__=="__main__":
     # parse arguments
     parser = ArgumentParser(config_options=MagiConfigOptions(strict = True, default="configs/C1.py"),formatter_class=ArgumentDefaultsRawHelpFormatter)
@@ -288,15 +339,15 @@ if __name__=="__main__":
     sigFiles = dSet.signal
     inputFiles = dSet.background
     inputFiles.update(sigFiles)
+    sample_fractions = args.dataset.sample_fractions
     jetConstFeat = args.features.jetConst
     jetFeat = args.features.jetVariables
     pTBins = args.hyper.pTBins
-    uniform = args.features.uniform
-    mTs = args.features.mT
-    weights = args.features.weight
+    uniform_var = args.features.uniform
+    weight_var = args.features.weight
     numConst = args.hyper.numConst
     num_classes = args.hyper.num_classes
     if not os.path.isdir("processedDataNPZ"):
     	os.makedirs("processedDataNPZ")
-    process_all_vars(dSet.path, inputFiles, jetConstFeat, jetFeat, pTBins, uniform, mTs, weights, numConst, num_classes)
+    process_all_vars(dSet.path, inputFiles, jetConstFeat, jetFeat, pTBins, uniform_var, weight_var, numConst, num_classes, sample_fractions)
 
