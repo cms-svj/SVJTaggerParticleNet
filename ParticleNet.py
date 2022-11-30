@@ -106,7 +106,6 @@ class ParticleNet(nn.Module):
 
     def __init__(self,
                  input_dims,
-                 jet_features_dim,
                  num_classes,
                  conv_params=[(7, (32, 32, 32)), (7, (64, 64, 64))],
                  fc_params=[(128, 0.1)],
@@ -142,7 +141,7 @@ class ParticleNet(nn.Module):
         for idx, layer_param in enumerate(fc_params):
             channels, drop_rate = layer_param
             if idx == 0:
-                in_chn = (out_chn + jet_features_dim) if self.use_fusion else (conv_params[-1][1][-1] + jet_features_dim)
+                in_chn = (out_chn) if self.use_fusion else (conv_params[-1][1][-1])
             else:
                 in_chn = fc_params[idx - 1][0]
             if self.for_segmentation:
@@ -158,7 +157,7 @@ class ParticleNet(nn.Module):
 
         self.for_inference = for_inference
 
-    def forward(self, points, features, jetFeatures, mask=None):
+    def forward(self, points, features, mask=None):
         if mask is None:
             mask = (features.abs().sum(dim=1, keepdim=True) != 0)  # (N, 1, P)
         points *= mask
@@ -191,7 +190,6 @@ class ParticleNet(nn.Module):
             else:
                 x = fts.mean(dim=-1)
         
-        x = torch.cat((x,jetFeatures),dim=1) 
         output = self.fc(x)
         if self.for_inference:
             output = torch.softmax(output, dim=1)
