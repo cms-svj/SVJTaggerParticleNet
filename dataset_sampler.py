@@ -16,8 +16,8 @@ def countJets(inputFileNames,key,inputFileIndices):
 def getReferencePtHist(inputFileNames,inputFileIndices,pT,weight):
     pTBin = np.arange(0,3000,50)
     SVJCond = getCondition(inputFileNames,"SVJ",inputFileIndices)
-    SVJPtHist, bins = np.histogram(pT[SVJCond],pTBin)
-    return SVJPtHist,pTBin
+    referencePtHist, bins = np.histogram(pT[SVJCond],pTBin)
+    return referencePtHist,pTBin
 
 def getJetIndices(referenceHist,pTBin,key,inputFileNames,inputFileIndices,pT,weight):
     weightedHistList = []
@@ -51,7 +51,7 @@ def getJetIndices(referenceHist,pTBin,key,inputFileNames,inputFileIndices,pT,wei
     return finalIndices
 
 inFolder = "processedDataNPZ"
-inNPZFileName = "processedData_nc100_validation"
+inNPZFileName = "processedData_nc100_train"
 npzFile = np.load("{}/{}.npz".format(inFolder,inNPZFileName))
 inputPoints = npzFile["inputPoints"]
 inputFeatures = npzFile["inputFeatures"]
@@ -112,4 +112,4 @@ countJets(inputFileNames,"SVJ",dictOut["inputFileIndices"])
 #print("inputPoints",dictOut['inputPoints'].shape)
 #print("inputFeatures",dictOut['inputFeatures'].shape)
 #print("inputJetFeatures",dictOut['inputJetFeatures'].shape)        
-np.savez_compressed("{}/{}_pTWeightedByBinAndProportion.npz".format(inFolder,inNPZFileName),**dictOut)
+np.savez_compressed("{}/{}_uniformPt.npz".format(inFolder,inNPZFileName),**dictOut)
