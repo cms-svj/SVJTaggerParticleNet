@@ -85,6 +85,7 @@ python -m pip install --no-cache-dir pip --upgrade
 python -m pip install --no-cache-dir dask[dataframe]==2020.12.0 distributed==2020.12.0 dask-jobqueue
 python -m pip install --no-cache-dir magiconfig
 python -m pip install --no-cache-dir sklearn
+python -m pip install --no-cache-dir seaborn
 python -m pip install --no-cache-dir GPUtil
 if [[ "$useLCG" -eq 1 ]]; then
         python -m pip install --no-cache-dir torch==1.9 --upgrade
