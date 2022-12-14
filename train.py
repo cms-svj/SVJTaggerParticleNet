@@ -40,6 +40,8 @@ def processBatch(args, device, data, model, criterion, lambdas, epoch):
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
         output = model(points.float().to(device), features.float().to(device))
+        if torch.isnan(torch.sum(output)):
+            print("output has nan:", output)
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
     torch.cuda.empty_cache()
     #print("\n After emptying cache")
@@ -52,14 +54,14 @@ def processBatch(args, device, data, model, criterion, lambdas, epoch):
     outTag = outSoftmax[:,signalIndex]
     normedweight = torch.ones_like(outTag)
     # disco signal parameter
-    sgpVal = pT.squeeze(1).to(device)
-    mask = sgpVal.gt(signalIndex-1).to(device)
-    maskedoutTag = torch.masked_select(outTag, mask)
-    maskedsgpVal = torch.masked_select(sgpVal, mask)
-    maskedweight = torch.masked_select(normedweight, mask)
-    batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
-    lambdaDC = ldc
-    return l1*batch_loss, lambdaDC*batch_loss_dc, batch_loss_dc
+    #sgpVal = pT.squeeze(1).to(device)
+    #mask = sgpVal.gt(signalIndex-1).to(device)
+    #maskedoutTag = torch.masked_select(outTag, mask)
+    #maskedsgpVal = torch.masked_select(sgpVal, mask)
+    #maskedweight = torch.masked_select(normedweight, mask)
+    #batch_loss_dc = distance_corr(maskedoutTag.to(device), maskedsgpVal.to(device), maskedweight.to(device), 1).to(device)
+    #lambdaDC = ldc
+    return l1*batch_loss #, lambdaDC*batch_loss_dc, batch_loss_dc
 
 def main():
     rng = np.random.RandomState(2022)
@@ -71,9 +73,9 @@ def main():
     parser.add_config_only(*c.config_schema)
     parser.add_config_only(**c.config_defaults)
     args = parser.parse_args()
-
     if not os.path.isdir(args.outf):
         os.mkdir(args.outf)
+    parser.write_config(args, args.outf + "/config_out.py")
     # Choose cpu or gpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print('Using device:', device)
@@ -103,14 +105,14 @@ def main():
     uniform = args.features.uniform
     weight = args.features.weight
     numConst = args.hyper.numConst
-    trainNPZ = "processedDataNPZ/processedData_nc100_train_pTWeightedByBinAndProportion.npz"
-    valNPZ = "processedDataNPZ/processedData_nc100_validation_pTWeightedByBinAndProportion.npz"
+    trainNPZ = "processedDataNPZ/processedData_nc100_train_uniformPt.npz"
+    valNPZ = "processedDataNPZ/processedData_nc100_validation_uniformPt.npz"
     train = RootDataset(trainNPZ)
     val = RootDataset(valNPZ)
     inputFeatureVars = train.inputFeaturesVarName
     print("Input jet constituent features:",inputFeatureVars)
     loader_train = udata.DataLoader(dataset=train, batch_size=hyper.batchSize, num_workers=0, shuffle=True)
-    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0)
+    loader_val = udata.DataLoader(dataset=val, batch_size=hyper.batchSize, num_workers=0, shuffle=False)
     # Build model
     network_module = particlenet_pf
     network_options = {}
@@ -131,7 +133,6 @@ def main():
     model = copy.deepcopy(model)
     model = model.to(device)
     model.eval()
-    modelLocation = "{}/{}".format(args.outf,args.model)
     modelInfo = []
     modelInfo.append("Model contains {} trainable parameters.".format(count_parameters(model)))
     with open('{}/modelInfo.txt'.format(args.outf), 'w') as f:
@@ -164,7 +165,7 @@ def main():
             model.train()
             model.zero_grad()
             optimizer.zero_grad()
-            batch_loss_tag, batch_loss_dc, dc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            batch_loss_tag = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             batch_loss_total = batch_loss_tag # + batch_loss_dc
             batch_loss_total.backward()
             optimizer.step()
@@ -174,20 +175,19 @@ def main():
             #train_dc_val += dc_val.item()
             train_loss_total += batch_loss_total.item()
             # writer.add_scalar('training loss', train_loss_total / 1000, epoch * len(loader_train) + i)
-            del batch_loss_tag, batch_loss_total, dc_val
         train_loss_tag /= len(loader_train)
-        train_loss_dc /= len(loader_train)
-        train_dc_val /= len(loader_train)
+        #train_loss_dc /= len(loader_train)
+        #train_dc_val /= len(loader_train)
         train_loss_total /= len(loader_train)
         training_losses_tag[epoch] = train_loss_tag
-        training_losses_dc[epoch] = train_loss_dc
+        #training_losses_dc[epoch] = train_loss_dc
         training_losses_total[epoch] = train_loss_total
         if np.isnan(train_loss_tag):
             print("nan in training")
             break
         print("t_tag: "+ str(train_loss_tag))
-        print("t_dc: "+ str(train_loss_dc))
-        print("t_dc_val: "+ str(train_dc_val))
+        #print("t_dc: "+ str(train_loss_dc))
+        #print("t_dc_val: "+ str(train_dc_val))
         print("t_total: "+ str(train_loss_total))
 
         # validation
@@ -196,36 +196,39 @@ def main():
         val_dc_val = 0
         val_loss_total = 0
         for i, data in enumerate(loader_val):
-            output_loss_tag, output_loss_dc, dc_val = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
+            output_loss_tag = processBatch(args, device, data, model, criterion, [hyper.lambdaTag, hyper.lambdaReg, hyper.lambdaGR, hyper.lambdaDC], epoch)
             output_loss_total = output_loss_tag # + output_loss_dc
             val_loss_tag += output_loss_tag.item()
             # val_loss_dc += output_loss_dc.item()
             # val_dc_val += dc_val.item()
             val_loss_total += output_loss_total.item()
-            del output_loss_tag, output_loss_dc, dc_val
         val_loss_tag /= len(loader_val)
-        val_loss_dc /= len(loader_val)
-        val_dc_val /= len(loader_val)
+        #val_loss_dc /= len(loader_val)
+        #val_dc_val /= len(loader_val)
         val_loss_total /= len(loader_val)
         scheduler.step()
         #scheduler.step(torch.tensor([val_loss_total]))
         validation_losses_tag[epoch] = val_loss_tag
-        validation_losses_dc[epoch] = val_loss_dc
+        #validation_losses_dc[epoch] = val_loss_dc
         validation_losses_total[epoch] = val_loss_total
+        if np.isnan(val_loss_tag):
+            print("nan in val")
+            break
         print("v_tag: "+ str(val_loss_tag))
-        print("v_dc: "+ str(val_loss_dc))
-        print("v_dc_val: "+ str(val_dc_val))
+        #print("v_dc: "+ str(val_loss_dc))
+        #print("v_dc_val: "+ str(val_dc_val))
         print("v_total: "+ str(val_loss_total))
         # save the model
         model.eval()
+        modelLocation = "{}/net_{}.pth".format(args.outf,epoch)
         torch.save(model.state_dict(), modelLocation)
         torch.cuda.empty_cache()
     # writer.close()
 
     # plot loss/epoch for training and validation sets
     print("Making basic validation plots")
-    training_tag = plt.plot(training_losses_tag, label='training_tag')
-    validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
+    #training_tag = plt.plot(training_losses_tag, label='training_tag')
+    #validation_tag = plt.plot(validation_losses_tag, label='validation_tag')
     #training_dc = plt.plot(training_losses_dc, label='training_dc')
     #validation_dc = plt.plot(validation_losses_dc, label='validation_dc')
     training_total = plt.plot(training_losses_total, label='training_total')
@@ -234,7 +237,6 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    parser.write_config(args, args.outf + "/config_out.py")
 
 if __name__ == "__main__":
     main()
