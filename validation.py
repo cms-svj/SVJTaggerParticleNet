@@ -372,12 +372,12 @@ def plotROC(label_train, output_train_tag, w_train, label_test, output_test_tag,
         plt.close(fig)
 
 def plotConfusionMatrix(y_true, y_pred, weight, jetClassDict, outFolder, plotLabel=""):
-    cmat = confusion_matrix(y_true,y_pred,sample_weight=w_test,normalize="true")
+    cmat = confusion_matrix(y_true,y_pred,sample_weight=weight,normalize="true")
     print("label_test",np.unique(y_true,return_counts=True))
     print(cmat)
     # the following condition happens when a jet does not have probability greater than the working point for any of the category
     if len(np.unique(y_pred)) > len(np.unique(y_true)):
-        xticklabels = np.array(jetClassDict)[:,0] + ["Unknown"]
+        xticklabels = list(np.array(jetClassDict)[:,0]) + ["Unknown"]
         cmat = cmat[:-1] # there is no true unknown jet
     else:
         xticklabels = np.array(jetClassDict)[:,0]
@@ -520,7 +520,7 @@ def main():
     # confusion matrix based on the discrimination distribution between each category and the rest of the categories.
     workingPts = np.array(jetClassDict)[:,2].astype(float)
     wpt_outputs = []
-    for rawOutput in range(rawOutputs_test):
+    for rawOutput in rawOutputs_test:
         candidatePositions = np.where(rawOutput > workingPts)[0]
         if len(candidatePositions) == 0:
             candidate = len(rawOutput)
