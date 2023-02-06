@@ -20,28 +20,26 @@ class RootDataset(udata.Dataset):
         pData = np.load(processedFile)
         inputPoints = pData["inputPoints"]
         inputFeatures = pData["inputFeatures"]
-        inputJetFeatures = pData["inputJetFeatures"]
+        masks = pData["masks"]
         signal = pData["signal"]
         pTs = pData["pT"]
         weights = pData["weight"]
         mMeds = pData["mMed"]
         mDarks = pData["mDark"]
         rinvs = pData["rinv"]
-        alphas = pData["alpha"]
         inputFileIndex = pData["inputFileIndices"]
         inputFileNames = pData["inputFileNames"]
         inputFeaturesVarName = pData["inputFeaturesVarName"]
         # self.vars = dataSet.astype(float).values
         self.points = inputPoints
         self.features = inputFeatures
-        self.jetFeatures = inputJetFeatures
+        self.masks = masks
         self.signal = signal
         self.pTs = pTs
         self.weights = weights
         self.mMeds = mMeds
         self.mDarks = mDarks
         self.rinvs = rinvs
-        self.alphas = alphas
         self.inputFileIndex = inputFileIndex
         self.inputFileNames = inputFileNames
         self.inputFeaturesVarName = inputFeaturesVarName
@@ -56,20 +54,19 @@ class RootDataset(udata.Dataset):
     def __getitem__(self, idx):
         points_np = self.points[idx].copy()
         features_np = self.features[idx].copy()
-        jetFeatures_np = self.jetFeatures[idx].copy()
+        masks_np = self.masks[idx].copy()
         label_np = np.zeros(1, dtype=np.compat.long).copy()
         pTs_np = np.array([self.pTs[idx]]).copy()
         weights_np = np.array([self.weights[idx]]).copy()
         mMeds_np = np.array([self.mMeds[idx]]).copy()
         mDarks_np = np.array([self.mDarks[idx]]).copy()
         rinvs_np = np.array([self.rinvs[idx]]).copy()
-        alphas_np = np.array([np.compat.long(self.alphas[idx])]).copy()
         inputFileIndex_np = np.array([np.compat.long(self.inputFileIndex[idx])]).copy()
         label_np += np.where(self.signal[idx] == 1)[0][0] #Calculates label 
         
         points  = torch.from_numpy(points_np)
         features  = torch.from_numpy(features_np)
-        jetFeatures  = torch.from_numpy(jetFeatures_np)
+        masks = torch.from_numpy(masks_np)
         # print("Data inside getitem")
         # print(data)
         label = torch.from_numpy(label_np)
@@ -79,9 +76,8 @@ class RootDataset(udata.Dataset):
         mMeds = torch.from_numpy(mMeds_np).float()
         mDarks = torch.from_numpy(mDarks_np).float()
         rinvs = torch.from_numpy(rinvs_np).float()
-        alphas = torch.from_numpy(alphas_np)
 
-        return label, points, features, jetFeatures, inputFileIndex, pTs, weights, mMeds, mDarks, rinvs, alphas
+        return label, points, features, masks, inputFileIndex, pTs, weights, mMeds, mDarks, rinvs
 
 def getCondition(inputFileNames,key,mcT):
     conditions = np.zeros(len(mcT),dtype=bool)
@@ -112,9 +108,10 @@ if __name__=="__main__":
     uniform = args.features.uniform
     weights = args.features.weight
     numConst = args.hyper.numConst
-    dataset = RootDataset("processedDataNPZ/processedData_nc100_train_pTWeightedByBinAndProportion.npz")
+    dataset = RootDataset("processedDataNPZ/processedData_nc100_train.npz")
     print("inputFileNames:",dataset.inputFileNames)
     inputFileNames = dataset.inputFileNames
+    inputFeaturesVarName = dataset.inputFeaturesVarName
     #sizes = get_sizes(len(dataset), dSet.sample_fractions)
     #train, val, test = udata.random_split(dataset, sizes, generator=torch.Generator().manual_seed(1000))
     #print("train.__len__()",train.__len__())
@@ -142,11 +139,17 @@ if __name__=="__main__":
     print("Number of signals: ",len(labels[labels==1]))
     print("Number of backgrounds: ",len(labels[labels==0]))
     print("Information for Points:")
-    print("Input has nan:",np.isnan(np.sum(points)))
+    print("Input points shape:",points.shape)
+    print("Input points has nan:",np.isnan(np.sum(points)))
+    print("Input points sum:",np.sum(points))
     print("inputMean:", np.mean(points,axis=0))
     print("inputSTD:", np.std(points,axis=0))
     print("Information for Features:")
-    print("Input has nan:",np.isnan(np.sum(features)))
+    print("Input features shape:",features.shape)
+    print("Input features has nan:",np.isnan(np.sum(features)))
+    print("Input features sum:",np.sum(features))
+    for i in range(features.shape[1]):
+        print("{} mean:".format(inputFeaturesVarName[i]),np.mean(features[:,i,:]))
     print("inputMean:", np.mean(features,axis=0))
     print("inputSTD:", np.std(features,axis=0))
     print("inputFileIndex:", inputFileIndex)

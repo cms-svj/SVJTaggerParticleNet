@@ -28,9 +28,27 @@ class ParticleNetTagger1Path(nn.Module):
                               use_counts=use_counts,
                               for_inference=for_inference)
 
-    def forward(self, pf_points, pf_features):
-        return self.pn(pf_points, self.pf_conv(pf_features))
+    # def forward(self, pf_points, pf_features):
+    #     return self.pn(pf_points, self.pf_conv(pf_features))
 
+    def forward(self, points, features, mask):
+        if self.pf_input_dropout is not None:
+          mask = (self.pf_input_dropout(mask) != 0).float()
+          points *= mask
+          features *= mask
+
+        points = points
+        features = self.pf_conv(features * mask)
+        mask = mask
+
+        # print("points")
+        # print(points)
+        # print("features")
+        # print(features)
+        # print("mask")
+        # print(mask)
+
+        return self.pn(points, features, mask)
 
 def get_model(inputFeatureVars,**kwargs):
     # conv_params = [

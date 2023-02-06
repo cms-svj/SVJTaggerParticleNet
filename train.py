@@ -32,14 +32,14 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def processBatch(args, device, data, model, criterion, lambdas, epoch):
-    label, points, features, jetFeatures, inputFileIndex, pT, w, med, dark, rinv, alpha = data
+    label, points, features, masks, inputFileIndex, pT, w, med, dark, rinv = data
     l1, l2, lgr, ldc = lambdas
     #print("\n Initial GPU Usage")
     #gpu_usage()
     with autocast():
         # inputPoints = torch.randn(len(label.squeeze(1)),2,100).to(device)
         # inputFeatures = torch.randn(len(label.squeeze(1)),15,100).to(device)
-        output = model(points.float().to(device), features.float().to(device))
+        output = model(points.float().to(device), features.float().to(device), masks.float().to(device))
         if torch.isnan(torch.sum(output)):
             print("output has nan:", output)
         batch_loss = criterion(output.to(device), label.squeeze(1).to(device)).to(device)
@@ -95,18 +95,8 @@ def main():
     inputFiles.update(sigFiles)
     print(inputFiles)
     varSetjetConst = args.features.jetConst
-    varSetjetVariables = args.features.jetVariables
-    varSetjetVariables = []
-    for var in args.features.jetVariables:
-        if var not in ['jCstPtAK8', 'jCstEtaAK8', 'jCstPhiAK8', 'jCstEnergyAK8']:
-            varSetjetVariables.append(var)
-    print("Input jet features:",varSetjetVariables)
-    pTBins = hyper.pTBins
-    uniform = args.features.uniform
-    weight = args.features.weight
-    numConst = args.hyper.numConst
-    trainNPZ = "processedDataNPZ/processedData_nc100_train_uniformPt.npz"
-    valNPZ = "processedDataNPZ/processedData_nc100_validation_uniformPt.npz"
+    trainNPZ = "processedDataNPZ/processedData_train_uniformPt.npz"
+    valNPZ = "processedDataNPZ/processedData_validation_uniformPt.npz"
     train = RootDataset(trainNPZ)
     val = RootDataset(valNPZ)
     inputFeatureVars = train.inputFeaturesVarName
