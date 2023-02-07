@@ -142,10 +142,9 @@ def process_all_vars(inputFolder, samples, jetConstFeat, num_const, num_classes,
     outputNPZFileName = "processedData"
 
     # save input features as train, test, and validation sets
-    # save_npz(train_indices, "train", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
-    # save_npz(test_indices, "test", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
-    # save_npz(validation_indices, "validation", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
-    save_npz(list(train_indices)+list(test_indices)+list(validation_indices), "mMed800N1", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
+    save_npz(train_indices, "train", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
+    save_npz(test_indices, "test", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
+    save_npz(validation_indices, "validation", inputFileNames, allPoints, allFeatures, allMask, allSignal, inputFileIndices, allPt, allWeight, allMmed, allMdark, allRinv, jetConstFeat, outputFolder,outputNPZFileName)
    
 if __name__=="__main__":
     # parse arguments
