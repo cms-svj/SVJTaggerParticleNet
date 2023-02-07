@@ -1,5 +1,6 @@
 import numpy as np
 import mplhep as hep
+import sys
 
 labelDict = {
     0:"QCD",
@@ -71,8 +72,9 @@ def getBkgJetIndices(referenceHist,pTBin,key,inputFileNames,inputFileIndices,pT,
                 finalIndices += list(randomGenerator.choice(allJ_j_pos,nJ_j,replace=True))
     return finalIndices
 
+trainType = sys.argv[1] # (train or validation)
 inFolder = "processedDataNPZ"
-inNPZFileName = "processedData_validation"
+inNPZFileName = "processedData_{}".format(trainType)
 npzFile = np.load("{}/{}.npz".format(inFolder,inNPZFileName))
 inputPoints = npzFile["inputPoints"]
 inputFeatures = npzFile["inputFeatures"]
