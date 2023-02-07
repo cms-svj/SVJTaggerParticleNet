@@ -7,8 +7,8 @@ You can run this on the lpc-gpu, lxplus condor gpu, or the wilson cluster.
 ## Environment Setup
 ```
 cd <working_directory>
-git clone git@github.com:cms-svj/SVJTaggerNN.git
-cd SVJTaggerNN
+git clone git@github.com:cms-svj/SVJTaggerParticleNet.git
+cd SVJTaggerParticleNet
 ./setup.sh -l
 source initLCG.sh
 ```
@@ -19,18 +19,22 @@ So before the singularity setup code was fixed, it is probably best to use the L
 ### Update Config File
 There are three locations where you can access the input training files depending on where you are running the training.
 This information is important for you to update the config file (`configs/C_tch_jConst.py`), so that you are able to access the input files. 
-- lxplus: `/eos/user/c/chin/SVJTrainingFiles/jetConstTrainingFiles/`
-- lpc gpu: `root://cmseos.fnal.gov//store/user/keanet/tchannel/jetConstTrainingFiles/jetConstTrainingFiles/`
-- wilson cluster: `/work1/cms_svj/keane/particleNet/jetConstTrainingFiles/`
+- lxplus: `/eos/user/c/chin/SVJTrainingFiles/PNTrainingFiles/`
+- lpc gpu: `root://cmseos.fnal.gov//store/user/keanet/tchannel/jetConstTrainingFiles/PNTrainingFiles_01312023/`
+- wilson cluster: `/work1/cms_svj/keane/trainingFiles/PNTrainingFiles/`
 ### Process Input Data
-Since the input data for the particleNet training have to be in a certain shape in order to run the code successfully, we need to process the training root files to get the input data in the proper shape first. In this step, we also split the dataset into train, test, and validation sets. Once we have processed the root files, we will get an npz file in the `processedDataNPZ` folder.
+In this step, we also split the dataset into train, test, and validation sets. If you haven't done so already, `mkdir processedDataNPZ`.
 ```
 python processData.py -C configs/C_tch_jConst.py
 ```
-Next, we need to sample the train and validation sets properly, so that there is as little correlation between pT and the neural network score as possible. This is done by sampling the train/validation set in a way that the pT distribution of all the signals combined matches the pT distribution of QCD and that of TTJets.
-Before running the command below, make sure that in `dataset_sampler.py`, the variable `inNPZFileName` is set to the name of the train/validation set npz file. You will need to run this command twice: once for the train set and once for the validation set.
+Once we have processed the root files, we will get three npz files in the `processedDataNPZ` folder: `processedData_train.npz`, `processedData_test.npz`, and `processedData_validation.npz`.
+
+Next, we need to sample the train and validation sets properly, so that there is as little correlation between pT and the neural network score as possible. To accomplish that, we used the pT distribution of all the signals combined as the reference pT distribution and we sample the QCD and TTJets so that the QCD and TTJets pT distributions match the reference distribution. For each background, we also make sure the number of jets in each pT bin matches the actual proportion of the jets from different background samples. 
+
+You will need to run `python dataset_sampler.py` twice: once for the train set and once for the validation set:
 ```
-python dataset_sampler.py
+python dataset_sampler.py train
+python dataset_sampler.py validation
 ```
 ## Training and Validation
 In `train.py`, set the variables `trainNPZ` and `valNPZ` to the paths of the output npz files from the previous step, and then run
