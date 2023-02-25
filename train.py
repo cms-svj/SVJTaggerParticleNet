@@ -133,7 +133,7 @@ def main():
     criterion.to(device=device)
 
     #Optimizer
-    optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95, last_epoch=-1, verbose=True)
 
     # training and validation
