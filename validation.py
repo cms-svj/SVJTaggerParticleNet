@@ -27,13 +27,11 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 mplColors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
 
+plotFormat = "pdf"
+
 def kstest(data_train,data_test):
     ks, pv = stats.ks_2samp(data_train,data_test)
     return pv
-
-def ztest(X1,X2):
-    return abs(np.mean(X1)-np.mean(X2))/np.sqrt(np.var(X1,ddof=1) + np.var(X2,ddof=1))
-
 
 def collectiveKS(dataList):
     allComs = list(itertools.combinations(range(len(dataList)),2))
@@ -95,6 +93,8 @@ def getNNOutput(dataset, model, device, signalIndex=2):
             allOutputs = np.concatenate((allOutputs,output))
             targetLabel = l.squeeze(1).numpy()
             targetLabels = np.concatenate((targetLabels,targetLabel))
+        # if i == 500:
+        #     break
     return targetLabels, allOutputs, np.array(rawOutputs), inputFileIndices, pT, weight, meds, darks, rinvs
 
 def getROCStuff(label, output, weights=None):
@@ -150,7 +150,7 @@ def plotSignificance(cutBins,plotBinEdge,var_train,w_train,inpIndex_train,output
     # plt.ylim(0,np.nanmax(eff)*1.1)
     plt.ylabel("FOM ( sqrt(2((S+B)*log(1+S/B)-S)) )")
     plt.xlabel('{} (GeV)'.format(varLabel))
-    plt.savefig(outf + "/significance_{}.png".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outf + "/significance_{}.{}".format(varLabel,plotFormat), dpi=fig.dpi, bbox_inches="tight")
     plt.figure(figsize=(12, 8))
     bkgOnly_train = tagLabel == 0
     sigOnly_train = np.logical_not(bkgOnly_train)
@@ -159,7 +159,7 @@ def plotSignificance(cutBins,plotBinEdge,var_train,w_train,inpIndex_train,output
     plt.ylabel("Event")
     plt.xlabel('{} (GeV)'.format(varLabel))
     plt.legend()
-    plt.savefig(outf + "/sigVsBkg_{}.png".format(varLabel), dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outf + "/sigVsBkg_{}.{}".format(varLabel,plotFormat), dpi=fig.dpi, bbox_inches="tight")
 
 def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,outf,dfOut=None,sig=True):
     fig, ax = plt.subplots(figsize=(12, 8))
@@ -178,11 +178,11 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
             output_pTC_wpt = np.where(output_pTC>wpt,1,0)
             if sig:
                 ylabel = "Signal Efficiency"
-                plotname = outf + "/sigEffVs{}.png".format(varLabel)
+                plotname = outf + "/sigEffVs{}.{}".format(varLabel,plotFormat)
                 totalCount = label_pTC
             else:
                 ylabel = "Mistag Rate"
-                plotname = outf + "/mistagVs{}.png".format(varLabel)
+                plotname = outf + "/mistagVs{}.{}".format(varLabel,plotFormat)
                 totalCount = label_pTC + 1
             weighted_num = np.sum(np.multiply(output_pTC_wpt,weights_pTC))
             weighted_den = np.sum(np.multiply(totalCount,weights_pTC))
@@ -201,11 +201,11 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
     plt.grid()
     if sig:
         ylabel = "Signal Efficiency"
-        plotname = outf + "/sigEffVs{}.png".format(varLabel)
+        plotname = outf + "/sigEffVs{}.{}".format(varLabel,plotFormat)
         plt.ylim(0,1.0)
     else:
         ylabel = "Mistag Rate"
-        plotname = outf + "/mistagVs{}.png".format(varLabel)
+        plotname = outf + "/mistagVs{}.{}".format(varLabel,plotFormat)
         plt.ylim(0,0.4)
     # plt.ylim(0,np.nanmax(eff)*1.1)
     ax.set_ylabel(ylabel)
@@ -213,7 +213,7 @@ def plotEffvsVar(binX,var_train,w_train,label_train,output_train_tag,varLabel,ou
     plt.legend()
     plt.savefig(plotname, dpi=fig.dpi, bbox_inches="tight")
 
-def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,disLab=False,weights=None,histBinEdge=50,dfOut=None):
+def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,disLab=False,weights=None,histBinEdge=50,performanceMetrics=None):
     binWidth = binVarBins[1] - binVarBins[0]
     for weightCondition, weights in [["weighted", weights], ["unweighted", np.ones(len(weights))]]:
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -234,40 +234,19 @@ def plotByBin(binVar,binVarBins,histVar,xlabel,varLab,outDir,plotName,xlim,disLa
                     lab = '{:.2f} < {} < {:.2f}'.format(binVarBins[j]-binWidth/2.,varLab,binVarBins[j]+binWidth/2)
             wVL = weights[cond]
             histVL = histVar[cond]
-            if plotName=="SNNpermdark_sig":
-                print(plotName)
-                print(cond)
-                print(np.unique(histVL))
             if len(histVL) > 0:
                 histData = histMakePlot(histVL,binEdge=histBinEdge,weights=wVL,color=mplColors[j%len(mplColors)],facecolorOn=False,alpha=0.5,label=lab)
-                if type(dfOut) == pd.core.frame.DataFrame:
-                    hDataList.append(histData)
+                hDataList.append(histData)
         if len(hDataList) > 1:
-            dfOut["avgKS_{}_{}".format(plotName,weightCondition)] = collectiveKS(hDataList)
+            performanceMetrics["avgKS_{}_{}".format(plotName,weightCondition)] = collectiveKS(hDataList)
         ax.set_ylabel('Norm Events')
         ax.set_xlabel(xlabel)
         plt.legend()
         plt.xlim(xlim[0],xlim[1])
-        plt.savefig(outDir + "/{}_{}.png".format(plotName,weightCondition), dpi=fig.dpi, bbox_inches="tight")
+        plt.savefig(outDir + "/{}_{}.{}".format(plotName,weightCondition,plotFormat), dpi=fig.dpi, bbox_inches="tight")
         plt.yscale("log")
         # plt.ylim(0.0001,0.2)
-        plt.savefig(outDir + "/{}_{}_log.png".format(plotName,weightCondition), dpi=fig.dpi, bbox_inches="tight")
-
-def NNvsVar2D(var_train,output_train_tag,var_range,tag_range,xlabel,plotType,outDir,dfOut=None):
-    plt.figure(figsize=(12, 8))
-    axes = plt.gca()
-    corr = np.corrcoef(var_train,output_train_tag)[0][1]
-    plt.text(0.7,1.05,"Correlation = {:.3f}".format(corr),transform = axes.transAxes)
-    varLabel = ""
-    if "p_T" in xlabel:
-        varLabel = "pT"
-    if type(dfOut) == pd.core.frame.DataFrame:
-        dfOut["pearsonCorr_{}_{}".format(varLabel,plotType)] = abs(corr)
-    plt.hist2d(var_train,output_train_tag,bins=[var_range,tag_range],norm=mpl.colors.LogNorm())
-    plt.xlabel(xlabel)
-    plt.ylabel("NN Score")
-    plt.colorbar()
-    plt.savefig(outDir + "/2D_NNvs{}_{}.png".format(varLabel,plotType), bbox_inches="tight")
+        plt.savefig(outDir + "/{}_{}_log.{}".format(plotName,weightCondition,plotFormat), dpi=fig.dpi, bbox_inches="tight")
 
 def plotMultiClassDiscrim(rawOutputs, label, weight, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, trainType, color, alpha, facecolorOn, hatch, points, compareClassType="Ind"):
     if compareClassType == "Ind":
@@ -277,21 +256,27 @@ def plotMultiClassDiscrim(rawOutputs, label, weight, baseClassNum, baseClassLabe
     allBaseClassOutputs = rawOutputs[:,baseClassNum] 
     compareClassAsBaseClass = allBaseClassOutputs[compareClassCondition]
     binEdge = np.arange(0,1.001,0.02)
-    histMakePlot(compareClassAsBaseClass, binEdge, weights=weight[compareClassCondition], color=color, alpha=alpha, facecolorOn=facecolorOn, hatch=hatch, points=points, label='{} as {} ({})'.format(compareClassLabel,baseClassLabel,trainType))
-    return compareClassCondition
+    hist = histMakePlot(compareClassAsBaseClass, binEdge, weights=weight[compareClassCondition], color=color, alpha=alpha, facecolorOn=facecolorOn, hatch=hatch, points=points, label='{} as {} ({})'.format(compareClassLabel,baseClassLabel,trainType))
+    return hist, compareClassCondition
 
-def plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, colorDict, outFolder, compareClassType="Ind"):
+def plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, colorDict, outFolder, compareClassType="Ind", performanceMetrics=None):
     # plotting discriminator
     fig, ax = plt.subplots(figsize=(6, 6))
-    baseClassCond_test = plotMultiClassDiscrim(rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, baseClassNum, baseClassLabel, "test", colorDict[baseClassLabel], alpha=1.0, facecolorOn=False, hatch="//", points=False, compareClassType="Ind")
-    compClassCond_test = plotMultiClassDiscrim(rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, "test", colorDict[compareClassLabel], alpha=0.5, facecolorOn=True, hatch=None, points=False, compareClassType=compareClassType)
-    baseClassCond_train = plotMultiClassDiscrim(rawOutputs_train, label_train, w_train, baseClassNum, baseClassLabel, baseClassNum, baseClassLabel, "train", colorDict[baseClassLabel], alpha=1.0, facecolorOn=True, hatch=None, points=True, compareClassType="Ind")
-    compClassCond_train = plotMultiClassDiscrim(rawOutputs_train, label_train, w_train, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, "train", colorDict[compareClassLabel], alpha=1.0, facecolorOn=True, hatch=None, points=True, compareClassType=compareClassType)
-    ax.legend(loc='best', fontsize=10, frameon=False)
     if compareClassType == "Other":
         compareClassLabel = "Rest"
-    fig.savefig("{}/prob_{}_as_{}.png".format(outFolder,compareClassLabel,baseClassLabel), dpi=fig.dpi, bbox_inches="tight")
-
+    histbaseClass_test, baseClassCond_test = plotMultiClassDiscrim(rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, baseClassNum, baseClassLabel, "test", colorDict[baseClassLabel], alpha=1.0, facecolorOn=False, hatch="//", points=False, compareClassType="Ind")
+    histcompClass_test, compClassCond_test = plotMultiClassDiscrim(rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, "test", colorDict[compareClassLabel], alpha=0.5, facecolorOn=True, hatch=None, points=False, compareClassType=compareClassType)
+    histbaseClass_train, baseClassCond_train = plotMultiClassDiscrim(rawOutputs_train, label_train, w_train, baseClassNum, baseClassLabel, baseClassNum, baseClassLabel, "train", colorDict[baseClassLabel], alpha=1.0, facecolorOn=True, hatch=None, points=True, compareClassType="Ind")
+    histcompClass_train, compClassCond_train = plotMultiClassDiscrim(rawOutputs_train, label_train, w_train, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, "train", colorDict[compareClassLabel], alpha=1.0, facecolorOn=True, hatch=None, points=True, compareClassType=compareClassType)
+    ax.legend(loc='best', fontsize=10, frameon=False)
+    ksComp = kstest(histcompClass_train,histcompClass_test)
+    ksBase = kstest(histbaseClass_train,histbaseClass_test)
+    ax.text(0.5,0.75,"KS Test: {:.3f} ({}), {:.3f} ({})".format(ksComp,compareClassLabel,ksBase,baseClassLabel),fontsize=10,transform=ax.transAxes)
+    plt.ylabel("Density")
+    plt.xlabel("NN Score")
+    fig.savefig("{}/prob_{}_as_{}.{}".format(outFolder,compareClassLabel,baseClassLabel,plotFormat), dpi=fig.dpi, bbox_inches="tight")
+    performanceMetrics["kstest_discrim_{}_as_{}".format(baseClassLabel,baseClassLabel)] = ksBase
+    performanceMetrics["kstest_discrim_{}_as_{}".format(compareClassLabel,baseClassLabel)] = ksComp
     # plotting corresponding ROC
     combinationCond_train = baseClassCond_train | compClassCond_train
     label_train = label_train[combinationCond_train]
@@ -308,6 +293,8 @@ def plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutpu
 
     fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
     fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
+    performanceMetrics["auc_train_{}_as_{}".format(compareClassLabel,baseClassLabel)] = auc_Train
+    performanceMetrics["auc_test_{}_as_{}".format(compareClassLabel,baseClassLabel)] = auc_Test
     fig = plt.figure()
     plt.plot([0, 1], [0, 1], 'k--')
     plt.xlabel('False positive rate')
@@ -316,7 +303,7 @@ def plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutpu
     plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train), color='xkcd:red')
     plt.plot(fpr_Test, tpr_Test, label="Test (area = {:.3f})".format(auc_Test), color='xkcd:black')
     plt.legend(loc='best')
-    fig.savefig("{}/roc_plot_{}_as_{}.png".format(outFolder,compareClassLabel,baseClassLabel), dpi=fig.dpi, bbox_inches="tight")
+    fig.savefig("{}/roc_plot_{}_as_{}.{}".format(outFolder,compareClassLabel,baseClassLabel,plotFormat), dpi=fig.dpi, bbox_inches="tight")
        
 def plotDiscriminator(sigCond_train, bkgCond_train, sigCond_test, bkgCond_test, output_train_tag, w_train, output_test_tag, w_test, outputFolder, dfOut, colorSg, colorBg, bkgLab="Bg"):
     binEdge = np.arange(-0.01, 1.02, 0.02)
@@ -335,30 +322,11 @@ def plotDiscriminator(sigCond_train, bkgCond_train, sigCond_test, bkgCond_test, 
         dfOut["sigovertrain_{}".format(weightCondition)] = [kstest(h_Train_Sg,h_test_Sg)]
         dfOut["{}overtrain_{}".format(bkgLab,weightCondition)] = [kstest(h_Train_Bg,h_test_Bg)]
         ax.legend(loc='best', frameon=False)
-        fig.savefig("{}/discriminator_{}_{}.png".format(outputFolder,bkgLab,weightCondition), dpi=fig.dpi, bbox_inches="tight")
+        fig.savefig("{}/discriminator_{}_{}.{}".format(outputFolder,bkgLab,weightCondition,plotFormat), dpi=fig.dpi, bbox_inches="tight")
         # ks test for overtraining
-
-def plotROC(label_train, output_train_tag, w_train, label_test, output_test_tag, w_test, dfOut, outFolder, bkgLab):
-    for weightCondition, w_train, w_test in [["weighted", w_train, w_test], ["unweighted", np.ones(len(w_train)), np.ones(len(w_test))]]:
-        fpr_Train, tpr_Train, auc_Train = getROCStuff(label_train, output_train_tag, w_train)
-        fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test, output_test_tag, w_test)
-        fig = plt.figure()
-        plt.plot([0, 1], [0, 1], 'k--')
-        plt.xlabel('False positive rate')
-        plt.ylabel('True positive rate')
-        plt.title('ROC curve', pad=45.0)
-        plt.plot(fpr_Train, tpr_Train, label="Train (area = {:.3f})".format(auc_Train), color='xkcd:red')
-        plt.plot(fpr_Test, tpr_Test, label="Test (area = {:.3f})".format(auc_Test), color='xkcd:black')
-        plt.legend(loc='best')
-        dfOut["auc_train_{}_{}".format(bkgLab,weightCondition)] = [auc_Train]
-        dfOut["auc_test_{}_{}".format(bkgLab,weightCondition)] = [auc_Test]
-        fig.savefig("{}/roc_plot_{}_{}.png".format(outFolder,bkgLab,weightCondition), dpi=fig.dpi, bbox_inches="tight")
-        plt.close(fig)
 
 def plotConfusionMatrix(y_true, y_pred, weight, jetClassDict, outFolder, plotLabel=""):
     cmat = confusion_matrix(y_true,y_pred,sample_weight=weight,normalize="true")
-    print("label_test",np.unique(y_true,return_counts=True))
-    print(cmat)
     # the following condition happens when a jet does not have probability greater than the working point for any of the category
     if len(np.unique(y_pred)) > len(np.unique(y_true)):
         xticklabels = list(np.array(jetClassDict)[:,0]) + ["Unknown"]
@@ -369,7 +337,7 @@ def plotConfusionMatrix(y_true, y_pred, weight, jetClassDict, outFolder, plotLab
     sns.heatmap(cmat,annot=True,yticklabels=np.array(jetClassDict)[:,0],xticklabels=xticklabels,cmap='viridis')
     plt.ylabel("Truth")
     plt.xlabel("Predicted")
-    plt.savefig(outFolder + "/confusionMatrix{}.png".format(plotLabel),dpi=fig.dpi, bbox_inches="tight")
+    plt.savefig(outFolder + "/confusionMatrix{}.{}".format(plotLabel,plotFormat),dpi=fig.dpi, bbox_inches="tight")
 
 def getSigParScores(sp_test, label_test, output_test_tag, w_test, baseline, key):
     sps = np.unique(sp_test)
@@ -385,6 +353,42 @@ def getSigParScores(sp_test, label_test, output_test_tag, w_test, baseline, key)
         fpr_Test, tpr_Test, auc_Test = getROCStuff(label_test[cond], output_test_tag[cond], w_test[cond])
         spScores.append(auc_Test)
     return spList, spScores
+
+def plot2DNNScore(baseline,baselineScore,meds,medScores,otherPara,otherParaScores,otherParaLab,bkgLab,outFolder):
+    scores2D = np.full([len(meds),len(otherPara)], np.nan)
+    baseYIndex = meds.index(baseline["mMed"])
+    baseXIndex = otherPara.index(baseline[otherParaLab])
+    for i in range(len(otherPara)):
+        scores2D[baseYIndex,i] = otherParaScores[i]
+    for i in range(len(meds)):
+        scores2D[i,baseXIndex] = medScores[i]
+    scores2D[baseYIndex,baseXIndex] = baselineScore
+    # meds = np.flip(meds)
+    plt.figure()
+    plt.imshow(scores2D,vmin=0.5,vmax=1)
+    for (i, j), z in np.ndenumerate(scores2D):
+        if np.isnan(z):
+            z = ""
+        else:
+            z = '{:0.2f}'.format(z)
+        plt.text(j, i, z, ha='center', va='center',fontsize=15)
+    if otherParaLab == "mDark":
+        plt.xticks(range(len(otherPara)),np.array(otherPara,dtype=int))
+    else:
+        plt.xticks(range(len(otherPara)),otherPara)
+    plt.yticks(range(len(meds)),meds)
+    plt.ylabel("mMed")
+    plt.xlabel(otherParaLab)
+    plt.colorbar()
+    plt.savefig(outFolder + "/rocScoreSigP2D{}_{}.{}".format(bkgLab,otherParaLab,plotFormat), bbox_inches="tight")
+
+def plot1DNNvsSigPara(paras,paraScores,paraLab,bkgLab,outFolder,ymin=0.7,ymax=1):
+    plt.figure()
+    plt.plot(paras,np.around(paraScores,2),marker="o")
+    plt.ylabel("NN Score")
+    plt.xlabel(paraLab)
+    plt.ylim(ymin, ymax)
+    plt.savefig(outFolder + "/rocScoreNNvs{}_{}.{}".format(paraLab,bkgLab,plotFormat), bbox_inches="tight")
 
 def main():
     # parse arguments
@@ -426,16 +430,17 @@ def main():
         "mMed3000": "#5efdff",
         "SVJ_Dark": "#cd2bcc",
         "SVJ_MixDark": "#cc660d",
-        "SVJ_allDark": "#f2231b",
+        "SVJ": "#f2231b",
+        "Rest": "chocolate"
     }
 
     jetClassDict = [
         ["QCD",      0,0.5,"#4bd42d"],
         ["TTJets",   1,0.5,"#6666cc"],
-        ["SVJ_allDark", 2,0.5,"#cc660d"]
+        ["SVJ", 2,0.5,"#cc660d"] # for t-channel, this is the Dark + MixDark categories
     ]
 
-    dfOut = pd.DataFrame()
+    performanceMetrics = {}
     # Load dataset
     print('Loading dataset...')
     dSet = args.dataset
@@ -445,12 +450,11 @@ def main():
     inputFiles.update(sigFiles)
     varSetjetConst = args.features.jetConst
     numConst = args.features.num_const
-    trainNPZ = "processedDataNPZ/processedData_train.npz"
-    testNPZ = "processedDataNPZ/processedData_test.npz"
+    trainNPZ = "processedDataNPZ/processedData_train.npz" # schannel
+    testNPZ = "processedDataNPZ/processedData_test.npz" # schannel
     train = RootDataset(trainNPZ)
     test = RootDataset(testNPZ)
     inputFeatureVars = train.inputFeaturesVarName
-    print("Input jet constituent features:",inputFeatureVars)
     inputFileNames = train.inputFileNames
     # Build model
     # Build model
@@ -471,7 +475,53 @@ def main():
     model.to(device)
 
     label_test, output_test_tag, rawOutputs_test, inpIndex_test, pT_test, w_test, med_test, dark_test, rinv_test = getNNOutput(test, model, device)
-    
+
+    # 2D plots of ROC vs signal parameters
+    ## get auc for just baseline
+    baseline = {
+        "mMed": 2000, # 2000 for t-channel, 3000 for s-channel
+        "mDark": 20,
+        "rinv": 0.3
+    }
+    # there is floating point precision problem if we do not round the numbers
+    med_test = np.round(med_test)
+    dark_test = np.round(dark_test,1)
+    rinv_test = np.round(rinv_test,1)
+    bkgLabDict = {
+        "QCD":0,
+        "TTJets":1
+    } 
+
+    for bkgLab, bkgCode in bkgLabDict.items():
+        bkgSigCond = (label_test == bkgCode) | (label_test == 2)
+        med_testBkgSig = med_test[bkgSigCond]
+        dark_testBkgSig = dark_test[bkgSigCond]
+        rinv_testBkgSig = rinv_test[bkgSigCond]
+
+        output_test_tagBkgSig = rawOutputs_test[:,2][bkgSigCond]
+        label_testBkgSig = np.where(label_test[bkgSigCond]==2,1,0)
+        w_testBkgSig = w_test[bkgSigCond]
+
+        baselineCond = (med_testBkgSig == baseline["mMed"]) & (np.round(dark_testBkgSig,1) == baseline["mDark"]) & (np.round(rinv_testBkgSig,1) == baseline["rinv"])       
+        cond = baselineCond | (med_testBkgSig == 0) # background has 0 for all the signal parameters
+        fpr_baseline_Test, tpr_baseline_Test, baselineScore = getROCStuff(label_testBkgSig[cond], output_test_tagBkgSig[cond], w_testBkgSig[cond])
+
+        meds, medScores = getSigParScores(med_testBkgSig, label_testBkgSig, output_test_tagBkgSig, w_testBkgSig, "mMed", baseline)
+        darks, darkScores = getSigParScores(dark_testBkgSig, label_testBkgSig, output_test_tagBkgSig, w_testBkgSig, "mDark", baseline)
+        rinvs, rinvScores = getSigParScores(rinv_testBkgSig, label_testBkgSig, output_test_tagBkgSig, w_testBkgSig, "rinv", baseline)    
+
+        medScores[meds.index(baseline["mMed"])] = baselineScore
+        darkScores[darks.index(baseline["mDark"])] = baselineScore
+        rinvScores[rinvs.index(baseline["rinv"])] = baselineScore
+
+        plot1DNNvsSigPara(meds,medScores,"mMed",bkgLab,args.outf,ymin=0.7,ymax=0.98)
+        plot1DNNvsSigPara(darks,darkScores,"mDark",bkgLab,args.outf,ymin=0.7,ymax=0.98)
+        plot1DNNvsSigPara(rinvs,rinvScores,"rinv",bkgLab,args.outf,ymin=0.7,ymax=0.98)
+
+        plot2DNNScore(baseline,baselineScore,meds,medScores,darks,darkScores,"mDark",bkgLab,args.outf)
+        plot2DNNScore(baseline,baselineScore,meds,medScores,rinvs,rinvScores,"rinv",bkgLab,args.outf)
+    # raise Exception("Arretez")
+
     # Correlation between pT and NN Score
     for mainClass in jetClassDict:
         mainClassName = mainClass[0]
@@ -483,11 +533,10 @@ def main():
             asClassName = asClass[0]
             asClassNum = asClass[1]
             output_test_tag_class = rawOutputs_test[classCond][:,asClassNum]
-            plotByBin(binVar=pT_test_class,binVarBins = np.arange(250,2000,500),histVar=output_test_tag_class,xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_{}_as_{}".format(mainClassName,asClassName),xlim=[0,1.02],weights=w_test_class,histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut)
-            plotByBin(binVar=output_test_tag_class,binVarBins = np.arange(0.1,1,0.2),histVar=pT_test_class,xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_{}_as_{}".format(mainClassName,asClassName),xlim=[0,3000],weights=w_test_class,histBinEdge=np.arange(-30,3001,60))
+            plotByBin(binVar=pT_test_class,binVarBins = np.arange(250,2000,500),histVar=output_test_tag_class,xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_{}_as_{}".format(mainClassName,asClassName),xlim=[0,1.02],weights=w_test_class,histBinEdge=np.arange(-0.01, 1.02, 0.02),performanceMetrics=performanceMetrics)
+            plotByBin(binVar=output_test_tag_class,binVarBins = np.arange(0.1,1,0.2),histVar=pT_test_class,xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_{}_as_{}".format(mainClassName,asClassName),xlim=[0,3000],weights=w_test_class,histBinEdge=np.arange(-30,3001,60),performanceMetrics=performanceMetrics)
 
     # making confusion matrix to see which jet categories are harder to classify
-    print("output_test_tag",np.unique(output_test_tag,return_counts=True))
     ## this confusion_matrix assumes that the category with the highest probability is the predicted category
     plotConfusionMatrix(label_test, output_test_tag, w_test, jetClassDict, args.outf)
     plotConfusionMatrix(label_test, output_test_tag, np.ones(len(w_test)), jetClassDict, args.outf, "_unweighted")
@@ -518,218 +567,9 @@ def main():
             compareClassType = "Other"
         else:
             compareClassType = "Ind"
-        plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, colorDict, args.outf, compareClassType=compareClassType)
+        plotMultiClassDiscrimAndROC(rawOutputs_train, label_train, w_train, rawOutputs_test, label_test, w_test, baseClassNum, baseClassLabel, compareClassNum, compareClassLabel, colorDict, args.outf, compareClassType=compareClassType, performanceMetrics=performanceMetrics)
 
-    raise Exception("Arretez")
-
-    plotByBin(binVar=pT_test,binVarBins = np.arange(250,3000,500),histVar=output_test_tag,xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT",xlim=[0,1],weights=w_test,histBinEdge=np.arange(-0.01, 1.02, 0.02))
-    plotByBin(binVar=pT_test[bkgOnly_test],binVarBins = np.arange(250,2000,500),histVar=output_test_tag[bkgOnly_test],xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_bkg",xlim=[0,1.02],weights=w_test[bkgOnly_test],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut)
-    plotByBin(binVar=pT_test[sigOnly_test],binVarBins = np.arange(250,2000,500),histVar=output_test_tag[sigOnly_test],xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_sig",xlim=[0,1.02],weights=w_test[sigOnly_test],histBinEdge=np.arange(-0.01, 1.02, 0.02))
-    plotByBin(binVar=pT_test[QCD_test],binVarBins = np.arange(250,2000,500),histVar=output_test_tag[QCD_test],xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_QCD",xlim=[0,1.02],weights=w_test[QCD_test],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut)
-    plotByBin(binVar=pT_test[TTJets_test],binVarBins = np.arange(250,2000,500),histVar=output_test_tag[TTJets_test],xlabel="NN Score",varLab="pT",outDir=args.outf,plotName="SNNperpT_TTJets",xlim=[0,1.02],weights=w_test[TTJets_test],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut)
-
-    # pT per NN score bin
-    plotByBin(binVar=output_test_tag,binVarBins = np.arange(0.1,1,0.2),histVar=pT_test,xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN",xlim=[0,3000],weights=w_test,histBinEdge=np.arange(-30,3001,60))
-    plotByBin(binVar=output_test_tag[bkgOnly_test],binVarBins = np.arange(0.1,1,0.2),histVar=pT_test[bkgOnly_test],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_bkg",xlim=[0,3000],weights=w_test[bkgOnly_test],histBinEdge=np.arange(-30,3001,60),dfOut=dfOut)
-    plotByBin(binVar=output_test_tag[sigOnly_test],binVarBins = np.arange(0.1,1,0.2),histVar=pT_test[sigOnly_test],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_sig",xlim=[0,3000],weights=w_test[sigOnly_test],histBinEdge=np.arange(-30,3001,60))
-    plotByBin(binVar=output_test_tag[QCD_test],binVarBins = np.arange(0.1,1,0.2),histVar=pT_test[QCD_test],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_QCD",xlim=[0,3000],weights=w_test[QCD_test],histBinEdge=np.arange(-30,3001,60),dfOut=dfOut)
-    plotByBin(binVar=output_test_tag[TTJets_test],binVarBins = np.arange(0.1,1,0.2),histVar=pT_test[TTJets_test],xlabel="Jet $p_T (GeV)$",varLab="SNN",outDir=args.outf,plotName="pTperSNN_TTJets",xlim=[0,3000],weights=w_test[TTJets_test],histBinEdge=np.arange(-30,3001,60))
-
-    print("pT_train max:",np.amax(pT_train))
-    print("pT_test max:",np.amax(pT_test))
-    QCD_train = getCondition(inputFileNames,"QCD",inpIndex_train)
-    TTJets_train = getCondition(inputFileNames,"TTJets",inpIndex_train)
-    signal_train = getCondition(inputFileNames,"SVJ",inpIndex_train)
-    QCD_test = getCondition(inputFileNames,"QCD",inpIndex_test)
-    TTJets_test = getCondition(inputFileNames,"TTJets",inpIndex_test)
-    signal_test = getCondition(inputFileNames,"SVJ",inpIndex_test)
-    bkgOnly_train = label_train == 0
-    sigOnly_train = np.logical_not(bkgOnly_train)
-    bkgOnly_test = label_test == 0
-    sigOnly_test = np.logical_not(bkgOnly_test)
-    wpt = 0.4
-    bkgtrain_NNOut = output_train_tag < wpt
-    sigtrain_NNOut = np.logical_not(bkgtrain_NNOut)
-
-    # Creating a pandas dataFrame for training data
-    # df = pd.DataFrame(data=inputFeatures_train,columns=varSet)
-    # # testing pT prediction with GR turned off
-
-    # if args.pIn:
-    #     # plot correlation
-    #     fig, ax = plt.subplots(figsize=(12, 8))
-    #     corr = np.round(df.corr(),2)
-    #     ax = sns.heatmap(corr,cmap="Spectral")
-    #     bottom, top = ax.get_ylim()
-    #     left, right = ax.get_xlim()
-    #     ax.set_ylim(bottom + 0.5, top - 0.5)
-    #     ax.set_xlim(left - 0.5, right + 0.5)
-    #     plt.savefig(args.outf + "/corrHeatMap.png", dpi=fig.dpi, bbox_inches="tight")
-    #     fig, ax = plt.subplots(figsize=(12, 8))
-    #
-    #     # plot input variable
-    #     zTests = pd.DataFrame(columns=["var","ztest"])
-    #     df["label"] = label_train
-    #     df["weights"] = w_train
-    #     for var in varSet:
-    #         dataSig = df[var][sigOnly_train]
-    #         dataBkg = df[var][bkgOnly_train]
-    #         plt.figure(figsize=(12, 8))
-    #         dataAll = dataSig,dataBkg),axis=None)
-    #         minX = np.amin(dataAll)
-    #         maxX = np.amax(dataAll)
-    #         binX = np.linspace(minX,maxX,50)
-    #         histMakePlot(dataSig,binEdge=binX,color='xkcd:blue',alpha=0.5,label='Background')
-    #         histMakePlot(dataBkg,binEdge=binX,color='xkcd:red',alpha=1.0,label='Signal',hatch="//",facecolorOn=False)
-    #         plt.ylabel('Norm Events')
-    #         plt.xlabel(var)
-    #         plt.legend()
-    #         plt.savefig(args.outf + "/{}.png".format(var), dpi=fig.dpi, bbox_inches="tight")
-    #         zt = ztest(dataSig,dataBkg)
-    #         zTests.loc[len(zTests.index)] = [var,zt]
-    #         zTests.to_csv("{}/zTests.csv".format(args.outf))
-
-    QCD_train = getCondition(inputFileNames,"QCD",inpIndex_train)
-    TTJets_train = getCondition(inputFileNames,"TTJets",inpIndex_train)
-    signal_train = getCondition(inputFileNames,"SVJ",inpIndex_train)
-    QCD_test = getCondition(inputFileNames,"QCD",inpIndex_test)
-    TTJets_test = getCondition(inputFileNames,"TTJets",inpIndex_test)
-    signal_test = getCondition(inputFileNames,"SVJ",inpIndex_test)
-    QCD_Sig_train = signal_train | QCD_train
-    QCD_Sig_test = signal_test | QCD_test
-    TTJets_Sig_train = signal_train | TTJets_train
-    TTJets_Sig_test = signal_test | TTJets_test
-
-    # plot pT
-    for weightCondition, weight_train in [["weighted", w_train], ["unweighted", np.ones(len(w_train))]]:
-        plt.figure(figsize=(12, 8))
-        minX = np.amin(pT_train)
-        maxX = 3000
-        binX = np.linspace(minX,maxX,100)
-        histMakePlot(pT_train[signal_train],binEdge=binX,color=colorDict["allSig"],weights=weight_train[signal_train],alpha=0.5,label='All signal')
-        histMakePlot(pT_train[QCD_train],binEdge=binX,color=colorDict["QCD"],weights=weight_train[QCD_train],alpha=0.5,label='QCD')
-        histMakePlot(pT_train[TTJets_train],binEdge=binX,color=colorDict["TTJets"],weights=weight_train[TTJets_train],alpha=0.5,label='TTJets')
-        plt.legend()
-        plt.xlabel("pT")
-        plt.ylabel("Norm Events")
-        plt.savefig(args.outf + "/pT_{}.png".format(weightCondition), bbox_inches="tight")
-        plt.yscale("log")
-        plt.savefig(args.outf + "/pT_{}_log.png".format(weightCondition), bbox_inches="tight")
-        # unnormalized
-        plt.figure(figsize=(12, 8))
-        minX = np.amin(pT_train)
-        maxX = 3000
-        binX = np.linspace(minX,maxX,100)
-        histMakePlot(pT_train[signal_train],binEdge=binX,color=colorDict["allSig"],norm=False,weights=weight_train[signal_train],alpha=0.5,label='All signal')
-        histMakePlot(pT_train[QCD_train],binEdge=binX,color=colorDict["QCD"],norm=False,weights=weight_train[QCD_train],alpha=0.5,label='QCD')
-        histMakePlot(pT_train[TTJets_train],binEdge=binX,color=colorDict["TTJets"],norm=False,weights=weight_train[TTJets_train],alpha=0.5,label='TTJets')
-        plt.legend()
-        plt.xlabel("pT")
-        plt.ylabel("Events")
-        plt.savefig(args.outf + "/pT_{}_unNormed.png".format(weightCondition), bbox_inches="tight")
-        plt.yscale("log")
-        plt.savefig(args.outf + "/pT_{}_log_unNormed.png".format(weightCondition), bbox_inches="tight")
-
-    
-    # plot ROC curve
-    plotROC(label_train, output_train_tag, w_train, label_test, output_test_tag, w_test, dfOut, args.outf, "Bg")
-    plotROC(label_train[QCD_Sig_train], output_train_tag[QCD_Sig_train], w_train[QCD_Sig_train], label_test[QCD_Sig_test], output_test_tag[QCD_Sig_test], w_test[QCD_Sig_test], dfOut, args.outf, "QCD")
-    plotROC(label_train[TTJets_Sig_train], output_train_tag[TTJets_Sig_train], w_train[TTJets_Sig_train], label_test[TTJets_Sig_test], output_test_tag[TTJets_Sig_test], w_test[TTJets_Sig_test], dfOut, args.outf, "TTJets")
-    # 2D plots of ROC vs signal parameters
-    ## get auc for just baseline
-    baseline = {
-        "mMed": 2000,
-        "mDark": 20,
-        "rinv": 0.3
-    }
-    # there is floating point precision problem if we do not round the numbers
-    med_test = np.round(med_test)
-    dark_test = np.round(dark_test,1)
-    rinv_test = np.round(rinv_test,1)
-    print("med_test values",np.unique(med_test))
-    print("dark_test values",np.unique(dark_test))
-    print("rinv_test values",np.unique(rinv_test))
-    baselineCond = (med_test == 2000) & (np.round(dark_test,1) == 20) & (np.round(rinv_test,1) == 0.3)       
-    cond = baselineCond | (med_test == 0) # background has 0 for all the signal parameters
-    fpr_baseline_Test, tpr_baseline_Test, baselineScore = getROCStuff(label_test[cond], output_test_tag[cond], w_test[cond])
-
-    meds, medScores = getSigParScores(med_test, label_test, output_test_tag, w_test, "mMed", baseline)
-    darks, darkScores = getSigParScores(dark_test, label_test, output_test_tag, w_test, "mDark", baseline)
-    rinvs, rinvScores = getSigParScores(rinv_test, label_test, output_test_tag, w_test, "rinv", baseline)    
-
-    print("baselineScore",baselineScore)
-    print("meds",list(meds))
-    print("medScores",list(medScores))
-    print("darks",list(darks))
-    print("darkScores",list(darkScores))
-    print("rinvs",list(rinvs))
-    print("rinvScores",list(rinvScores))
-
-    scores2D = np.full([len(meds),len(darks)], np.nan)
-    baseYIndex = meds.index(2000)
-    baseXIndex = darks.index(baseline["mDark"])
-    for i in range(len(darks)):
-        scores2D[baseYIndex,i] = darkScores[i]
-    for i in range(len(meds)):
-        scores2D[i,baseXIndex] = medScores[i]
-    scores2D[baseYIndex,baseXIndex] = baselineScore
-    meds.reverse()
-    plt.imshow(scores2D,vmin=0.5,vmax=1)
-    for (i, j), z in np.ndenumerate(scores2D):
-        if np.isnan(z):
-            z = ""
-        else:
-            z = '{:0.1f}'.format(z)
-        plt.text(j, i, z, ha='center', va='center')
-    plt.xticks(range(len(darks)),darks)
-    plt.yticks(range(len(meds)),meds)
-    plt.ylabel("mMed")
-    plt.xlabel("mDark")
-    plt.colorbar()
-    plt.savefig(args.outf + "/rocScoreSigP2D.png")
-
-    # plot eff vs pT
-    plotEffvsVar(np.arange(250,3000,100),pT_train[bkgOnly_train],w_train[bkgOnly_train],label_train[bkgOnly_train],output_train_tag[bkgOnly_train],"pT",args.outf,dfOut,sig=False)
-    plotEffvsVar(np.arange(250,3000,100),pT_train[sigOnly_train],w_train[sigOnly_train],label_train[sigOnly_train],output_train_tag[sigOnly_train],"pT",args.outf)
-    # plot significance
-    plotSignificance(np.arange(0,1,0.1),np.arange(0,1,0.1),rinv_train,w_train,inpIndex_train,output_train_tag,label_train,"rinv",args.outf,wpt=0.5)
-    # histogram NN score
-    fig, ax = plt.subplots(figsize=(12, 8))
-    histMakePlot(output_train_tag,binEdge=50,weights=w_train,color='xkcd:blue',alpha=0.5,label='Training set')
-    ax.set_ylabel('Norm Events')
-    ax.set_xlabel("NN Score")
-    plt.legend()
-    plt.savefig(args.outf + "/SNN.png", dpi=fig.dpi, bbox_inches="tight")
-
-    # plot discriminator
-    plotDiscriminator(signal_train, (QCD_train | TTJets_train), signal_test, (QCD_test | TTJets_test), output_train_tag, w_train, output_test_tag, w_test, args.outf, dfOut, colorDict["allSig"], colorDict["allBkg"], "Bg")
-    plotDiscriminator(signal_train, QCD_train, signal_test, QCD_test, output_train_tag, w_train, output_test_tag, w_test, args.outf, dfOut, colorDict["allSig"], colorDict["QCD"], "QCD")
-    plotDiscriminator(signal_train, TTJets_train, signal_test, TTJets_test, output_train_tag, w_train, output_test_tag, w_test, args.outf, dfOut, colorDict["allSig"], colorDict["TTJets"], "TTJets")
-    
-    # # NN score per rinv bin
-    # plotByBin(binVar=rinv_train,binVarBins = np.arange(0.1,1,0.1),histVar=output_train_tag,xlabel="NN Score",varLab="rinv",outDir=args.outf,plotName="SNNperrinv",xlim=[0,1.02],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
-    # plotByBin(binVar=rinv_train[bkgOnly_train],binVarBins = np.arange(0.1,1,0.1),histVar=output_train_tag[bkgOnly_train],xlabel="NN Score",varLab="rinv",outDir=args.outf,plotName="SNNperrinv_bkg",xlim=[0,1.02],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
-    # plotByBin(binVar=rinv_train[sigOnly_train],binVarBins = np.arange(0.1,1,0.1),histVar=output_train_tag[sigOnly_train],xlabel="NN Score",varLab="rinv",outDir=args.outf,plotName="SNNperrinv_sig",xlim=[0,1.02],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut,disLab=True)
-    # # rinv per NN score bin
-    # plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=rinv_train,xlabel="rinv",varLab="SNN",outDir=args.outf,plotName="rinvperSNN",xlim=[0,1],weights=w_train,histBinEdge=np.arange(-0.05,1.1,0.1))
-    # plotByBin(binVar=output_train_tag[bkgOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=rinv_train[bkgOnly_train],xlabel="rinv",varLab="SNN",outDir=args.outf,plotName="rinvperSNN_bkg",xlim=[0,1],weights=w_train[bkgOnly_train],histBinEdge=np.arange(-0.05,1.1,0.1))
-    # plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=rinv_train[sigOnly_train],xlabel="rinv",varLab="SNN",outDir=args.outf,plotName="rinvperSNN_sig",xlim=[0,1],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.05,1.1,0.1),dfOut=dfOut)
-    # NN score per mdark bin
-    #print("dark_train",np.unique(dark_train))
-    #plotByBin(binVar=dark_train,binVarBins = np.arange(10,111,10),histVar=output_train_tag,xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark",xlim=[0,1.02],weights=w_train,histBinEdge=np.arange(-0.01, 1.02, 0.02),disLab=True)
-    #plotByBin(binVar=dark_train[sigOnly_train],binVarBins = np.arange(10,111,10),histVar=output_train_tag[sigOnly_train],xlabel="NN Score",varLab="mdark",outDir=args.outf,plotName="SNNpermdark_sig",xlim=[0,1.02],weights=w_train[sigOnly_train],histBinEdge=np.arange(-0.01, 1.02, 0.02),dfOut=dfOut,disLab=True)
-    # mdark per NN score bin
-    #plotByBin(binVar=output_train_tag,binVarBins = np.arange(0.1,1,0.2),histVar=dark_train,xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN",xlim=[0,120],weights=w_train,histBinEdge=np.arange(5,111,10))
-    #plotByBin(binVar=output_train_tag[sigOnly_train],binVarBins = np.arange(0.1,1,0.2),histVar=dark_train[sigOnly_train],xlabel="mdark",varLab="SNN",outDir=args.outf,plotName="mdarkperSNN_sig",xlim=[0,120],weights=w_train[sigOnly_train],histBinEdge=np.arange(5,111,10),dfOut=dfOut)
-
-    # 2D histogram NN vs pT
-    # NNvsVar2D(pT_train,output_train_tag,np.linspace(100,2000,100),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","",args.outf)
-    # NNvsVar2D(pT_train[bkgOnly_train],output_train_tag[bkgOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","bkg",args.outf,dfOut)
-    # NNvsVar2D(pT_train[sigOnly_train],output_train_tag[sigOnly_train],np.linspace(100,2000,50),np.linspace(0,1.0,100),"Jet $p_T (GeV)$","sig",args.outf,dfOut)
-
-    # save important quantities for assessing performance
-    dfOut.to_csv("{}/output.csv".format(args.outf),index=False)
-    print(dfOut)
+    np.savez("{}/performanceMetrics.npz".format(args.outf),**performanceMetrics)
 
 if __name__ == "__main__":
     main()
