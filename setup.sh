@@ -12,6 +12,7 @@ LCG=$TCHANNEL_LCG
 SC=$TCHANNEL_SC
 DEV=0
 useLCG=0
+onEAF = 0
 
 usage(){
 	EXIT=$1
@@ -20,6 +21,7 @@ usage(){
 	$ECHO "Options:"
 	$ECHO "-d              \tuse the developer branch of Coffea"
 	$ECHO "-l              \tuse LCG environment (appends LCG to venv name)"
+	$ECHO "-e              \tsetting up the environment on the EAF"
 	$ECHO "-h              \tprint this message and exit"
 	$ECHO "-n [NAME]       \toverride the name of the virtual environment (default = $NAME)"
 	exit $EXIT
@@ -31,6 +33,8 @@ while getopts "dlhn:" opt; do
 		d) DEV=1
 		;;
 		l) useLCG=1
+		;;
+		e) onEAF = 1
 		;;
 		h) usage 0
 		;;
@@ -50,6 +54,10 @@ if [[ "$useLCG" -eq 1 ]]; then
         $ECHO "\nGetting the LCG environment ... "
         source $LCG/setup.sh
         pyenvflag=--copies
+        NAME=${NAME}LCG
+elif [[ "$onEAF" -eq 1 ]]; then
+        $ECHO "\nSetting up on the EAF ... "
+        pyenvflag=--system-site-packages
         NAME=${NAME}LCG
 elif [[ "$SINGULARITY_CONTAINER" == "" ]]; then
         ./launchSingularity.sh "$0 $@"
@@ -84,11 +92,11 @@ $ECHO "\nInstalling 'pip' packages ... \n"
 python -m pip install --no-cache-dir pip --upgrade
 python -m pip install --no-cache-dir dask[dataframe]==2020.12.0 distributed==2020.12.0 dask-jobqueue
 python -m pip install --no-cache-dir magiconfig
-python -m pip install --no-cache-dir sklearn
+python -m pip install --no-cache-dir scikit-learn
 python -m pip install --no-cache-dir seaborn
 python -m pip install --no-cache-dir GPUtil
 if [[ "$useLCG" -eq 1 ]]; then
-        python -m pip install --no-cache-dir torch==1.9 --upgrade
+        python -m pip install --no-cache-dir torch==1.13.1 --upgrade
 fi
 python -m pip install --no-cache-dir mt2
 if [[ "$DEV" -eq 1 ]]; then
