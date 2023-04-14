@@ -160,8 +160,8 @@ class ParticleNet(nn.Module):
     def forward(self, points, features, mask=None):
         if mask is None:
             mask = (features.abs().sum(dim=1, keepdim=True) != 0)  # (N, 1, P)
-        points *= mask
-        features *= mask
+        points = points * mask
+        features = features * mask
         coord_shift = (mask == 0) * 1e9
         if self.use_counts:
             counts = mask.float().sum(dim=-1)
