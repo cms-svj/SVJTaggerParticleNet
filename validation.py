@@ -450,8 +450,9 @@ def main():
     inputFiles.update(sigFiles)
     varSetjetConst = args.features.jetConst
     numConst = args.features.num_const
-    trainNPZ = "processedDataNPZ/processedData_train.npz" # schannel
-    testNPZ = "processedDataNPZ/processedData_test.npz" # schannel
+    trainInputFolder = "/wclustre/cms_svj/keane/processedDataNPZ"
+    trainNPZ = "{}/processedData_train.npz".format(trainInputFolder)
+    testNPZ = "{}/processedData_test.npz".format(trainInputFolder)
     train = RootDataset(trainNPZ)
     test = RootDataset(testNPZ)
     inputFeatureVars = train.inputFeaturesVarName

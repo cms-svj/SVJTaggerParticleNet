@@ -95,8 +95,9 @@ def main():
     inputFiles.update(sigFiles)
     print(inputFiles)
     varSetjetConst = args.features.jetConst
-    trainNPZ = "processedDataNPZ/processedData_train_uniformPt.npz"
-    valNPZ = "processedDataNPZ/processedData_validation_uniformPt.npz"
+    trainInputFolder = "/wclustre/cms_svj/keane/processedDataNPZ"
+    trainNPZ = "{}/processedData_train_uniformPt.npz".format(trainInputFolder)
+    valNPZ = "{}/processedData_validation_uniformPt.npz".format(trainInputFolder)
     train = RootDataset(trainNPZ)
     val = RootDataset(valNPZ)
     inputFeatureVars = train.inputFeaturesVarName
@@ -227,6 +228,7 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
+    np.savez(args.outf + "/losses.npz",training_losses_total=training_losses_total,validation_losses_total=validation_losses_total)
 
 if __name__ == "__main__":
     main()
