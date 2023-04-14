@@ -97,6 +97,7 @@ python -m pip install --no-cache-dir seaborn
 python -m pip install --no-cache-dir GPUtil
 if [[ "$useLCG" -eq 1 ]]; then
         python -m pip install --no-cache-dir torch==1.13.1 --upgrade
+        pip uninstall nvidia_cublas_cu11 # see https://stackoverflow.com/questions/74394695/how-does-one-fix-when-torch-cant-find-cuda-error-version-libcublaslt-so-11-no
 fi
 python -m pip install --no-cache-dir mt2
 if [[ "$DEV" -eq 1 ]]; then
