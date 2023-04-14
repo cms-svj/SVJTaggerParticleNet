@@ -12,7 +12,7 @@ LCG=$TCHANNEL_LCG
 SC=$TCHANNEL_SC
 DEV=0
 useLCG=0
-onEAF = 0
+onEAF=0
 
 usage(){
 	EXIT=$1
@@ -28,13 +28,13 @@ usage(){
 }
 
 # check arguments
-while getopts "dlhn:" opt; do
+while getopts "dlehn:" opt; do
 	case "$opt" in
 		d) DEV=1
 		;;
 		l) useLCG=1
 		;;
-		e) onEAF = 1
+		e) onEAF=1
 		;;
 		h) usage 0
 		;;
