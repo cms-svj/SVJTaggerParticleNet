@@ -450,7 +450,7 @@ def main():
     inputFiles.update(sigFiles)
     varSetjetConst = args.features.jetConst
     numConst = args.features.num_const
-    trainInputFolder = "/wclustre/cms_svj/keane/processedDataNPZ"
+    trainInputFolder = "/uscms_data/d1/keanet/SVJ/particleNet/processedDataNPZ"
     trainNPZ = "{}/processedData_train.npz".format(trainInputFolder)
     testNPZ = "{}/processedData_test.npz".format(trainInputFolder)
     train = RootDataset(trainNPZ)
@@ -471,7 +471,9 @@ def main():
     model = network_module.get_model(inputFeatureVars,**network_options)
     model = copy.deepcopy(model)
     print("Loading model from file " + modelLocation)
-    model.load_state_dict(torch.load(modelLocation))
+    checkpoint = torch.load(modelLocation)
+    startEpoch = checkpoint['epoch']
+    model.load_state_dict(checkpoint['model'])
     model.eval()
     model.to(device)
 
