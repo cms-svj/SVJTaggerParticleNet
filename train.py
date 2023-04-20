@@ -95,7 +95,7 @@ def main():
     inputFiles.update(sigFiles)
     print(inputFiles)
     varSetjetConst = args.features.jetConst
-    trainInputFolder = "/wclustre/cms_svj/keane/processedDataNPZ"
+    trainInputFolder = "/uscms_data/d1/keanet/SVJ/particleNet/processedDataNPZ"
     trainNPZ = "{}/processedData_train_uniformPt.npz".format(trainInputFolder)
     valNPZ = "{}/processedData_validation_uniformPt.npz".format(trainInputFolder)
     train = RootDataset(trainNPZ)
@@ -115,15 +115,8 @@ def main():
     network_options["fc_dropout"] = args.hyper.fc_dropout
     network_options["num_classes"] = args.hyper.num_classes
     model = network_module.get_model(inputFeatureVars,**network_options)
-    if (args.model == None):
-        #model.apply(init_weights)
-        print("Creating new model ")
-        args.model = 'net.pth'
-    else:
-        print("Loading model from " + modelLocation)
     model = copy.deepcopy(model)
     model = model.to(device)
-    model.eval()
     modelInfo = []
     modelInfo.append("Model contains {} trainable parameters.".format(count_parameters(model)))
     with open('{}/modelInfo.txt'.format(args.outf), 'w') as f:
@@ -136,7 +129,22 @@ def main():
     #Optimizer
     optimizer = optim.Adam(model.parameters(), lr = hyper.learning_rate, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.95, last_epoch=-1, verbose=True)
-
+    if (args.model == None):
+        #model.apply(init_weights)
+        print("Creating new model ")
+        args.model = 'net.pth'
+        startEpoch = 0
+        model.eval()
+    else:
+        modelLocation = "{}/{}".format(args.outf,args.model)
+        print("Loading model from " + modelLocation)
+        checkpoint = torch.load(modelLocation)
+        startEpoch = checkpoint['epoch']
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler = checkpoint['scheduler']
+        model.train()
+        
     # training and validation
     # writer = SummaryWriter()
     training_losses_tag = np.zeros(hyper.epochs)
@@ -145,7 +153,8 @@ def main():
     validation_losses_tag = np.zeros(hyper.epochs)
     validation_losses_dc = np.zeros(hyper.epochs)
     validation_losses_total = np.zeros(hyper.epochs)
-    for epoch in range(hyper.epochs):
+    allSavedModelLocs = []
+    for epoch in range(startEpoch,hyper.epochs):
         print("Beginning epoch " + str(epoch))
         # training
         train_loss_tag = 0
@@ -212,10 +221,21 @@ def main():
         # save the model
         model.eval()
         modelLocation = "{}/net_{}.pth".format(args.outf,epoch)
-        torch.save(model.state_dict(), modelLocation)
+        checkpoint = {
+                        'epoch': epoch+1,
+                        'model': model.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'scheduler': scheduler
+        }
+        torch.save(checkpoint, modelLocation)
         torch.cuda.empty_cache()
+        allSavedModelLocs.append(modelLocation)
     # writer.close()
-
+    # saving only the model with the smallest loss and the latest one (in case we want to continue training in the future)
+    for i in range(len(allSavedModelLocs)-1):
+        if i != np.argmin(validation_losses_total):
+            os.system("rm {}".format(allSavedModelLocs[i]))
+        
     # plot loss/epoch for training and validation sets
     print("Making basic validation plots")
     #training_tag = plt.plot(training_losses_tag, label='training_tag')
@@ -228,7 +248,7 @@ def main():
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig(args.outf + "/loss_plot.png")
-    np.savez(args.outf + "/losses.npz",training_losses_total=training_losses_total,validation_losses_total=validation_losses_total)
+    np.savez(args.outf + "/losses{}.npz".format(startEpoch),training_losses_total=training_losses_total,validation_losses_total=validation_losses_total)
 
 if __name__ == "__main__":
     main()
